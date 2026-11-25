@@ -274,6 +274,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
   const [attDateTo, setAttDateTo] = useState<string>(todayIso);
   const [attSearchQuery, setAttSearchQuery] = useState<string>('');
   const [attDeptFilter, setAttDeptFilter] = useState<string>('All');
+  const [attCategoryFilter, setAttCategoryFilter] = useState<string>('All');
   const [attActionTypeFilter, setAttActionTypeFilter] = useState<string>('All');
   const [attOfficeFilter, setAttOfficeFilter] = useState<string>('All');
   const [attStatusFilter, setAttStatusFilter] = useState<string>('All');
@@ -736,6 +737,23 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
     'Management Employee',
   ];
 
+  const attCategoryOptions = useMemo(() => {
+    const set = new Set<string>([
+      'Field Employee',
+      'Office Employee',
+      'Factory Employee',
+      'Production',
+      'Warehouse Employee',
+      'Management Employee',
+      'Other Employee',
+    ]);
+    fieldForceReps.forEach((r) => {
+      const cat = String(r.employeeCategory || (r as any).employee_category || '').trim();
+      if (cat) set.add(cat);
+    });
+    return ['All', ...Array.from(set)];
+  }, [fieldForceReps]);
+
   // Employee Action Types & offices for Attendance Report filters
   const actionTypeOptions = useMemo(() => {
     const set = new Set<string>([
@@ -835,6 +853,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
       employeeName: rec.employeeName || emp?.name || 'Unknown Employee',
       department: rec.department || emp?.department || 'Operations',
       designation: rec.designation || emp?.designation || 'Executive',
+      employeeCategory: emp?.employeeCategory || (emp as any)?.employee_category || '',
       actionType: emp?.actionType || '',
       assignedOffice: officeName,
       checkIn,
@@ -859,6 +878,12 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
           if (!hay.includes(q)) return false;
         }
         if (!matchesAttDept(meta.department, meta.emp?.departments)) return false;
+        if (
+          attCategoryFilter !== 'All' &&
+          (meta.employeeCategory || '').trim().toLowerCase() !== attCategoryFilter.trim().toLowerCase()
+        ) {
+          return false;
+        }
         if (attActionTypeFilter !== 'All' && meta.actionType !== attActionTypeFilter) return false;
         if (attOfficeFilter !== 'All' && meta.assignedOffice !== attOfficeFilter) return false;
         if (attStatusFilter !== 'All') {
@@ -884,6 +909,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
     attDateTo,
     attSearchQuery,
     attDeptFilter,
+    attCategoryFilter,
     attActionTypeFilter,
     attOfficeFilter,
     attStatusFilter,
@@ -900,6 +926,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
           employeeLookupById.get(att.employeeId) ||
           employeeLookupById.get(att.employeeCode || '');
         const dept = att.department || emp?.department || 'Operations';
+        const empCategory = emp?.employeeCategory || (emp as any)?.employee_category || '';
         const actionType = emp?.actionType || '';
         const office =
           att.assignedOfficeName ||
@@ -909,6 +936,12 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
           if (!hay.includes(q)) return false;
         }
         if (attDeptFilter !== 'All' && dept !== attDeptFilter) return false;
+        if (
+          attCategoryFilter !== 'All' &&
+          empCategory.trim().toLowerCase() !== attCategoryFilter.trim().toLowerCase()
+        ) {
+          return false;
+        }
         if (attActionTypeFilter !== 'All' && actionType !== attActionTypeFilter) return false;
         if (attOfficeFilter !== 'All' && office !== attOfficeFilter) return false;
         return true;
@@ -920,6 +953,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
     attDateTo,
     attSearchQuery,
     attDeptFilter,
+    attCategoryFilter,
     attActionTypeFilter,
     attOfficeFilter,
     employeeLookupById,
@@ -938,6 +972,13 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
           if (!hay.includes(q)) return false;
         }
         if (!matchesAttDept(emp.department || 'Operations', emp.departments)) return false;
+        if (
+          attCategoryFilter !== 'All' &&
+          (emp.employeeCategory || (emp as any).employee_category || '').trim().toLowerCase() !==
+            attCategoryFilter.trim().toLowerCase()
+        ) {
+          return false;
+        }
         if (attActionTypeFilter !== 'All' && (emp.actionType || '') !== attActionTypeFilter) return false;
         if (attOfficeFilter !== 'All' && office !== attOfficeFilter) return false;
         return true;
@@ -989,6 +1030,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
     attDateTo,
     attSearchQuery,
     attDeptFilter,
+    attCategoryFilter,
     attActionTypeFilter,
     attOfficeFilter,
   ]);
@@ -2290,7 +2332,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2.5 text-xs">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
                 <input
@@ -2310,6 +2352,19 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                 {departmentOptions.map((dept) => (
                   <option key={dept} value={dept}>
                     Dept: {dept}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                value={attCategoryFilter}
+                onChange={(e) => setAttCategoryFilter(e.target.value)}
+                aria-label="Filter by Employee Category"
+                className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-semibold"
+              >
+                {attCategoryOptions.map((cat) => (
+                  <option key={cat} value={cat}>
+                    Employee Category: {cat}
                   </option>
                 ))}
               </select>
@@ -2796,6 +2851,13 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                             if (!hay.includes(q)) return false;
                           }
                           if (attDeptFilter !== 'All' && (emp.department || 'Operations') !== attDeptFilter) return false;
+                          if (
+                            attCategoryFilter !== 'All' &&
+                            (emp.employeeCategory || (emp as any).employee_category || '').trim().toLowerCase() !==
+                              attCategoryFilter.trim().toLowerCase()
+                          ) {
+                            return false;
+                          }
                           if (attActionTypeFilter !== 'All' && (emp.actionType || '') !== attActionTypeFilter) return false;
                           if (attOfficeFilter !== 'All' && office !== attOfficeFilter) return false;
                           if (attStatusFilter !== 'All') {
@@ -3129,6 +3191,8 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
               searchQuery={attSearchQuery}
               departmentFilter={attDeptFilter}
               onDepartmentFilterChange={setAttDeptFilter}
+              employeeCategoryFilter={attCategoryFilter}
+              onEmployeeCategoryFilterChange={setAttCategoryFilter}
               actionTypeFilter={attActionTypeFilter}
               officeFilter={attOfficeFilter}
               activeMonthHint={(attDateFrom || selectedMonthYear).slice(0, 7)}
@@ -3142,6 +3206,8 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
               searchQuery={attSearchQuery}
               departmentFilter={attDeptFilter}
               onDepartmentFilterChange={setAttDeptFilter}
+              employeeCategoryFilter={attCategoryFilter}
+              onEmployeeCategoryFilterChange={setAttCategoryFilter}
               actionTypeFilter={attActionTypeFilter}
               officeFilter={attOfficeFilter}
               activeMonthHint={(attDateFrom || selectedMonthYear).slice(0, 7)}

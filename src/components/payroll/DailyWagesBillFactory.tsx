@@ -11,6 +11,8 @@ interface DailyWagesBillFactoryProps {
   searchQuery: string;
   departmentFilter: string;
   onDepartmentFilterChange?: (dept: string) => void;
+  employeeCategoryFilter?: string;
+  onEmployeeCategoryFilterChange?: (category: string) => void;
   actionTypeFilter: string;
   officeFilter: string;
   activeMonthHint: string;
@@ -48,6 +50,16 @@ const STANDARD_EMPLOYMENT_TYPES = [
   'Cleaner',
   'Packing',
   'Security Guard',
+];
+
+const STANDARD_EMPLOYEE_CATEGORIES = [
+  'Field Employee',
+  'Office Employee',
+  'Factory Employee',
+  'Production',
+  'Warehouse Employee',
+  'Management Employee',
+  'Other Employee',
 ];
 
 const normStr = (v?: string) => String(v || '').trim().toLowerCase();
@@ -186,6 +198,8 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
   searchQuery,
   departmentFilter,
   onDepartmentFilterChange,
+  employeeCategoryFilter = 'All',
+  onEmployeeCategoryFilterChange,
   actionTypeFilter,
   officeFilter,
   activeMonthHint,
@@ -306,6 +320,19 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
     [fieldForceReps]
   );
 
+  const availableEmployeeCategories = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...STANDARD_EMPLOYEE_CATEGORIES,
+          ...fieldForceReps
+            .map((r) => String(r.employeeCategory || (r as any).employee_category || '').trim())
+            .filter(Boolean),
+        ])
+      ),
+    [fieldForceReps]
+  );
+
   const normalizedSelectedEmpTypes = useMemo(
     () => employmentTypeFilters.map((t) => normStr(t)),
     [employmentTypeFilters]
@@ -398,9 +425,10 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
         const empDept = rep.department || rep.departments?.[0] || 'Operations';
         const empType = rep.employmentType || (rep as any).employment_type || '-';
         const empGender = rep.gender || '-';
+        const empCategory = rep.employeeCategory || (rep as any).employee_category || '';
 
         if (q) {
-          const hay = `${rep.code || ''} ${rep.name || ''} ${empDept} ${empType} ${rep.employeeCategory || ''} ${rep.actionType || ''} ${office}`.toLowerCase();
+          const hay = `${rep.code || ''} ${rep.name || ''} ${empDept} ${empType} ${empCategory} ${rep.actionType || ''} ${office}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
 
@@ -412,6 +440,14 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
               normStr(stripDepartmentCode(d)) === normStr(stripDepartmentCode(departmentFilter))
           );
           if (!matchesDept) return false;
+        }
+
+        if (
+          employeeCategoryFilter &&
+          employeeCategoryFilter !== 'All' &&
+          normStr(employeeCategoryFilter) !== 'all'
+        ) {
+          if (normStr(empCategory) !== normStr(employeeCategoryFilter)) return false;
         }
 
         if (actionTypeFilter && actionTypeFilter !== 'All') {
@@ -569,6 +605,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
     departments,
     searchQuery,
     departmentFilter,
+    employeeCategoryFilter,
     actionTypeFilter,
     officeFilter,
     normalizedSelectedEmpTypes,
@@ -806,6 +843,23 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
               </option>
             ))}
           </select>
+
+          {/* Employee Category Filter */}
+          {onEmployeeCategoryFilterChange && (
+            <select
+              aria-label="Employee Category"
+              value={employeeCategoryFilter || 'All'}
+              onChange={(e) => onEmployeeCategoryFilterChange(e.target.value)}
+              className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800 font-semibold"
+            >
+              <option value="All">All Employee Categories</option>
+              {availableEmployeeCategories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          )}
 
           {/* Month Filter */}
           <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 ml-1">
