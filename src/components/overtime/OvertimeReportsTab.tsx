@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useERP } from '../../context/ERPContext';
 import { calculateEmployeeIndividualOvertime } from '../../types/overtime';
 import { OVERTIME_REPORT_ACTION_MAP } from '../../types/pagePermissions';
+import { exportElementToLandscapePdf } from '../../lib/landscapePdfExport';
 import * as XLSX from 'xlsx';
 import { 
   FileSpreadsheet, 
@@ -169,8 +170,6 @@ export const OvertimeReportsTab: React.FC = () => {
   const {
     overtimeRequests,
     overtimeAttendances,
-    overtimeRecords,
-    attendanceRecords,
     fieldForceReps,
     departments,
     salaryStructures,
@@ -199,8 +198,11 @@ export const OvertimeReportsTab: React.FC = () => {
   const [isEmpTypeDropdownOpen, setIsEmpTypeDropdownOpen] = useState(false);
   const empTypeDropdownRef = useRef<HTMLDivElement>(null);
   const [genderFilter, setGenderFilter] = useState('all');
+  const [employeeCategoryFilter, setEmployeeCategoryFilter] = useState('all');
   const [monthFilter, setMonthFilter] = useState(() => new Date().toISOString().slice(0, 7));
   const [employeeFilter, setEmployeeFilter] = useState('all');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const reportSheetRef = useRef<HTMLDivElement>(null);
   const hasUserChangedMonthRef = useRef(false);
 
   useEffect(() => {
@@ -217,7 +219,7 @@ export const OvertimeReportsTab: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isEmpTypeDropdownOpen]);
 
-  // If the default current month has no overtime data yet while another month does, auto-select the latest month with OT data
+  // If the default current month has no Final Approved overtime data yet while another month does, auto-select the latest month with Final Approved OT data
   useEffect(() => {
     if (hasUserChangedMonthRef.current || !monthFilter) return;
     const allDates: string[] = [];
@@ -225,15 +227,6 @@ export const OvertimeReportsTab: React.FC = () => {
       if (r.status === 'Final Approved' && r.overtimeDate) {
         allDates.push(r.overtimeDate);
       }
-    });
-    overtimeAttendances.forEach((a) => {
-      if (!a.requestId && a.date) allDates.push(a.date);
-    });
-    (overtimeRecords || []).forEach((o) => {
-      if (o.status === 'Approved' && o.date) allDates.push(o.date);
-    });
-    (attendanceRecords || []).forEach((a) => {
-      if (Number(a.overtimeHours) > 0 && a.date) allDates.push(a.date);
     });
 
     const parsedYms = allDates
@@ -246,7 +239,7 @@ export const OvertimeReportsTab: React.FC = () => {
         setMonthFilter(latestYm);
       }
     }
-  }, [overtimeRequests, overtimeAttendances, overtimeRecords, attendanceRecords, monthFilter]);
+  }, [overtimeRequests, monthFilter]);
 
   // List of 7 reports requested
   const reportsList = useMemo(
@@ -422,18 +415,51 @@ export const OvertimeReportsTab: React.FC = () => {
     [fieldForceReps]
   );
 
+  const STANDARD_EMPLOYEE_CATEGORIES = [
+    'Field Employee',
+    'Office Employee',
+    'Factory Employee',
+    'Production',
+    'Warehouse Employee',
+    'Management Employee',
+    'Other Employee',
+  ];
+
+  const availableEmployeeCategories = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...STANDARD_EMPLOYEE_CATEGORIES,
+          ...fieldForceReps
+            .map((r) => String(r.employeeCategory || (r as any).employee_category || '').trim())
+            .filter(Boolean),
+        ])
+      ),
+    [fieldForceReps]
+  );
+
   const selectedEmployeeFilterObj = useMemo(
     () => (employeeFilter === 'all' ? null : fieldForceReps.find((r) => r.id === employeeFilter) || null),
     [employeeFilter, fieldForceReps]
   );
 
   useEffect(() => {
-    if (effectiveActiveReport === 2 && employeeFilter !== 'all') {
-      if (!isEmployeeActive(selectedEmployeeFilterObj)) {
-        setEmployeeFilter('all');
-      }
+    if (employeeFilter === 'all') return;
+    if (effectiveActiveReport === 2 && !isEmployeeActive(selectedEmployeeFilterObj)) {
+      setEmployeeFilter('all');
+      return;
     }
-  }, [effectiveActiveReport, employeeFilter, selectedEmployeeFilterObj]);
+    if (
+      employeeCategoryFilter !== 'all' &&
+      selectedEmployeeFilterObj &&
+      normStr(
+        selectedEmployeeFilterObj.employeeCategory ||
+          (selectedEmployeeFilterObj as any).employee_category
+      ) !== normStr(employeeCategoryFilter)
+    ) {
+      setEmployeeFilter('all');
+    }
+  }, [effectiveActiveReport, employeeFilter, selectedEmployeeFilterObj, employeeCategoryFilter]);
 
   const normalizedSelectedEmpTypes = useMemo(
     () => employmentTypeFilters.map((t) => normStr(t)),
@@ -451,7 +477,11 @@ export const OvertimeReportsTab: React.FC = () => {
     });
   };
 
-  const matchesEmpTypeAndGender = (empType?: string, empGender?: string) => {
+  const matchesEmpTypeAndGender = (
+    empType?: string,
+    empGender?: string,
+    empCategory?: string
+  ) => {
     if (
       normalizedSelectedEmpTypes.length > 0 &&
       !normalizedSelectedEmpTypes.includes(normStr(empType))
@@ -461,6 +491,12 @@ export const OvertimeReportsTab: React.FC = () => {
     if (
       genderFilter !== 'all' &&
       normStr(empGender) !== normStr(genderFilter)
+    ) {
+      return false;
+    }
+    if (
+      employeeCategoryFilter !== 'all' &&
+      normStr(empCategory) !== normStr(employeeCategoryFilter)
     ) {
       return false;
     }
@@ -480,12 +516,20 @@ export const OvertimeReportsTab: React.FC = () => {
         return false;
       }
     }
-    if (employmentTypeFilters.length > 0 || genderFilter !== 'all') {
+    if (
+      employmentTypeFilters.length > 0 ||
+      genderFilter !== 'all' ||
+      employeeCategoryFilter !== 'all'
+    ) {
       const matchedRep = fieldForceReps.find((e) => matchesEmpIdentity(e, r));
       if (
         !matchesEmpTypeAndGender(
           matchedRep?.employmentType || (matchedRep as any)?.employment_type,
-          matchedRep?.gender
+          matchedRep?.gender,
+          matchedRep?.employeeCategory ||
+            (matchedRep as any)?.employee_category ||
+            (r as any).employeeCategory ||
+            (r as any).employee_category
         )
       ) {
         return false;
@@ -555,45 +599,6 @@ export const OvertimeReportsTab: React.FC = () => {
       return true;
     });
 
-    const activeAtts = overtimeAttendances.filter((a) => {
-      if (a.requestId) return false; // Linked OT request attendances are only included when the request itself is Final Approved
-      if (!matchesPeriod(a.date)) return false;
-      if (employeeFilter !== 'all') {
-        if (selectedEmployeeFilterObj) {
-          if (!matchesEmpIdentity(selectedEmployeeFilterObj, a)) return false;
-        } else if (a.employeeId !== employeeFilter) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const activeLegacyRecs = (overtimeRecords || []).filter((o) => {
-      if (o.status !== 'Approved') return false;
-      if (!matchesPeriod(o.date || o.monthYear)) return false;
-      if (employeeFilter !== 'all') {
-        if (selectedEmployeeFilterObj) {
-          if (!matchesEmpIdentity(selectedEmployeeFilterObj, o)) return false;
-        } else if (o.employeeId !== employeeFilter) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const activeDailyAttOT = (attendanceRecords || []).filter((a) => {
-      if (!(Number(a.overtimeHours) > 0)) return false;
-      if (!matchesPeriod(a.date)) return false;
-      if (employeeFilter !== 'all') {
-        if (selectedEmployeeFilterObj) {
-          if (!matchesEmpIdentity(selectedEmployeeFilterObj, a)) return false;
-        } else if (a.employeeId !== employeeFilter && a.fieldForceId !== employeeFilter) {
-          return false;
-        }
-      }
-      return true;
-    });
-
     type EmpSeed = {
       id: string;
       code: string;
@@ -617,7 +622,8 @@ export const OvertimeReportsTab: React.FC = () => {
       const empMatch = employeeFilter === 'all' || rep.id === employeeFilter;
       const repEmpType = rep.employmentType || (rep as any).employment_type || '-';
       const repGender = rep.gender || '-';
-      if (!deptMatch || !empMatch || !matchesEmpTypeAndGender(repEmpType, repGender)) return;
+      const repCategory = rep.employeeCategory || (rep as any).employee_category || '-';
+      if (!deptMatch || !empMatch || !matchesEmpTypeAndGender(repEmpType, repGender, repCategory)) return;
 
       const str = salaryStructures.find(
         (s) => s.employeeId === rep.id || (rep.code && s.employeeId === rep.code)
@@ -670,7 +676,8 @@ export const OvertimeReportsTab: React.FC = () => {
       }
       const repEmpType = matchedRep?.employmentType || (matchedRep as any)?.employment_type || '-';
       const repGender = matchedRep?.gender || '-';
-      if (!matchesEmpTypeAndGender(repEmpType, repGender)) {
+      const repCategory = matchedRep?.employeeCategory || (matchedRep as any)?.employee_category || '-';
+      if (!matchesEmpTypeAndGender(repEmpType, repGender, repCategory)) {
         return;
       }
       const key = matchedRep?.id || rec.employeeId || rec.employeeCode || rec.employeeName || '';
@@ -691,9 +698,6 @@ export const OvertimeReportsTab: React.FC = () => {
     };
 
     activeReqs.forEach(ensureEmployeeSeed);
-    activeAtts.forEach(ensureEmployeeSeed);
-    activeLegacyRecs.forEach(ensureEmployeeSeed);
-    activeDailyAttOT.forEach(ensureEmployeeSeed);
 
     const sortedEmployees = Array.from(empMap.values()).sort((a, b) =>
       String(a.code).localeCompare(String(b.code), undefined, { numeric: true })
@@ -747,7 +751,6 @@ export const OvertimeReportsTab: React.FC = () => {
       const dailyHours = new Array(daysInActiveMonth).fill(0);
       let totalHours = 0;
       let totalAmount = 0;
-      const coveredDates = new Set<string>();
 
       const empReqs = activeReqs.filter((r) => matchesEmpIdentity(emp, r));
       empReqs.forEach((req) => {
@@ -765,11 +768,8 @@ export const OvertimeReportsTab: React.FC = () => {
               ? attHrs
               : Number(req.expectedHours || 0);
 
-        if (parsed) {
-          coveredDates.add(parsed.ymd);
-          if (parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
-            dailyHours[parsed.day - 1] += hrs;
-          }
+        if (parsed && parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
+          dailyHours[parsed.day - 1] += hrs;
         }
         totalHours += hrs;
         if (
@@ -781,60 +781,6 @@ export const OvertimeReportsTab: React.FC = () => {
           const calc = calculateEmployeeIndividualOvertime(monthlySalary, monthEffectivePolicy, hrs);
           totalAmount += calc.totalAmountBDT;
         }
-      });
-
-      const empAtts = activeAtts.filter((a) => matchesEmpIdentity(emp, a));
-      empAtts.forEach((att) => {
-        const parsed = extractYMD(att.date);
-        const hrs =
-          Number(att.actualOvertimeHours) > 0
-            ? Number(att.actualOvertimeHours)
-            : Number(att.rawCalculatedHours || 0);
-        if (parsed) {
-          coveredDates.add(parsed.ymd);
-          if (parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
-            dailyHours[parsed.day - 1] += hrs;
-          }
-        }
-        totalHours += hrs;
-        const calc = calculateEmployeeIndividualOvertime(monthlySalary, monthEffectivePolicy, hrs);
-        totalAmount += calc.totalAmountBDT;
-      });
-
-      const empLegacy = activeLegacyRecs.filter((o) => matchesEmpIdentity(emp, o));
-      empLegacy.forEach((ot) => {
-        const parsed = extractYMD(ot.date);
-        if (parsed && coveredDates.has(parsed.ymd)) return;
-        const hrs = Number(ot.hours || 0);
-        if (parsed) {
-          coveredDates.add(parsed.ymd);
-          if (parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
-            dailyHours[parsed.day - 1] += hrs;
-          }
-        }
-        totalHours += hrs;
-        if (ot.totalAmountBDT !== undefined && ot.totalAmountBDT !== null) {
-          totalAmount += Number(ot.totalAmountBDT) || 0;
-        } else {
-          const calc = calculateEmployeeIndividualOvertime(monthlySalary, monthEffectivePolicy, hrs);
-          totalAmount += calc.totalAmountBDT;
-        }
-      });
-
-      const empDailyAtt = activeDailyAttOT.filter((a) => matchesEmpIdentity(emp, a));
-      empDailyAtt.forEach((att) => {
-        const parsed = extractYMD(att.date);
-        if (parsed && coveredDates.has(parsed.ymd)) return;
-        const hrs = Number(att.overtimeHours || 0);
-        if (parsed) {
-          coveredDates.add(parsed.ymd);
-          if (parsed.day >= 1 && parsed.day <= daysInActiveMonth && hrs > 0) {
-            dailyHours[parsed.day - 1] += hrs;
-          }
-        }
-        totalHours += hrs;
-        const calc = calculateEmployeeIndividualOvertime(monthlySalary, monthEffectivePolicy, hrs);
-        totalAmount += calc.totalAmountBDT;
       });
 
       return {
@@ -876,14 +822,13 @@ export const OvertimeReportsTab: React.FC = () => {
   }, [
     overtimeRequests,
     overtimeAttendances,
-    overtimeRecords,
-    attendanceRecords,
     fieldForceReps,
     departments,
     salaryStructures,
     departmentFilter,
     employmentTypeFilters,
     genderFilter,
+    employeeCategoryFilter,
     employeeFilter,
     selectedEmployeeFilterObj,
     monthFilter,
@@ -1001,6 +946,25 @@ export const OvertimeReportsTab: React.FC = () => {
     window.addEventListener('afterprint', cleanup);
     window.print();
     setTimeout(cleanup, 1500);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!canExport || !activeReportDef || !reportSheetRef.current || isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      const fileName =
+        effectiveActiveReport === 2
+          ? `Daily_Overtime_Bill_Factory_${monthFilter || 'all'}.pdf`
+          : `${activeReportDef.name.replace(/\s+/g, '_')}_${monthFilter || 'all'}.pdf`;
+      await exportElementToLandscapePdf({
+        element: reportSheetRef.current,
+        fileName,
+        minCaptureWidthPx: effectiveActiveReport === 2 ? 1400 : 1100,
+        tableBorderStyle: effectiveActiveReport === 2 ? 'thin-black-grid' : 'preserve',
+      });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   // Generate Report 1: Employee-wise (Final Approved OT requests only)
@@ -1241,7 +1205,7 @@ export const OvertimeReportsTab: React.FC = () => {
         </div>
 
         {canExport && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {effectiveActiveReport === 2 && (
               <button
                 type="button"
@@ -1252,6 +1216,15 @@ export const OvertimeReportsTab: React.FC = () => {
                 Print Report
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isGeneratingPdf}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
+            >
+              <FileText className={`w-4 h-4 ${isGeneratingPdf ? 'animate-pulse' : ''}`} />
+              <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
+            </button>
             <button
               onClick={() => exportToExcel(currentData, activeReportDef.name.replace(/\s+/g, '_'))}
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
@@ -1386,6 +1359,18 @@ export const OvertimeReportsTab: React.FC = () => {
           </select>
 
           <select
+            aria-label="Employee Category"
+            value={employeeCategoryFilter}
+            onChange={(e) => setEmployeeCategoryFilter(e.target.value)}
+            className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-slate-700 bg-white"
+          >
+            <option value="all">All Employee Categories</option>
+            {availableEmployeeCategories.map((cat) => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+
+          <select
             aria-label="Employee"
             value={employeeFilter}
             onChange={(e) => setEmployeeFilter(e.target.value)}
@@ -1393,7 +1378,13 @@ export const OvertimeReportsTab: React.FC = () => {
           >
             <option value="all">All Employees</option>
             {fieldForceReps
-              .filter((r) => effectiveActiveReport !== 2 || isEmployeeActive(r))
+              .filter(
+                (r) =>
+                  (effectiveActiveReport !== 2 || isEmployeeActive(r)) &&
+                  (employeeCategoryFilter === 'all' ||
+                    normStr(r.employeeCategory || (r as any).employee_category) ===
+                      normStr(employeeCategoryFilter))
+              )
               .map(r => (
                 <option key={r.id} value={r.id}>{r.name} ({r.code || r.id})</option>
               ))}
@@ -1430,6 +1421,7 @@ export const OvertimeReportsTab: React.FC = () => {
       {/* Report 2: Exact Screenshot-Style Daily Overtime Bill Factory Sheet */}
       {effectiveActiveReport === 2 ? (
         <div
+          ref={reportSheetRef}
           id="dept-ot-bill-sheet"
           className="bg-white text-black rounded-xl border border-slate-300 shadow-sm p-4 font-serif print:border-none print:shadow-none print:p-0"
         >
@@ -1444,13 +1436,13 @@ export const OvertimeReportsTab: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-[10px] text-black">
+            <table className="w-full border-separate border-spacing-0 border-t-[0.75px] border-l-[0.75px] border-[#1a1a1a] text-[10px] text-black">
               <thead>
                 {/* Month Banner Row spanning full table width */}
                 <tr>
                   <th
                     colSpan={totalTableCols}
-                    className="border border-black py-0.5 px-2 text-center font-bold text-[11px] bg-white"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] py-0.5 px-2 text-center font-bold text-[11px] bg-white"
                   >
                     For the month of &nbsp;{monthHeadingLabel}
                   </th>
@@ -1458,40 +1450,40 @@ export const OvertimeReportsTab: React.FC = () => {
 
                 {/* Sub-header Row: blank cells on left/right, Weekday labels above 1..31 */}
                 <tr>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
                   {dayHeaders.map((d) => (
                     <th
                       key={`wk-${d.day}`}
-                      className="border border-black px-0.5 py-0.5 text-center font-normal text-[9px] bg-white min-w-[20px]"
+                      className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-0.5 text-center font-normal text-[9px] bg-white min-w-[20px]"
                     >
                       {d.weekday}
                     </th>
                   ))}
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
-                  <th className="border border-black px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
                 </tr>
 
                 {/* Main Header Row */}
                 <tr className="font-bold text-center bg-white">
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">S/N</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">EMP ID</th>
-                  <th className="border border-black px-2 py-1 whitespace-nowrap">Name Of Worker</th>
-                  <th className="border border-black px-2 py-1 whitespace-nowrap">Employment Type</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">Gender</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">Monthly Salary</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">Work Day</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap">Rate/ Day</th>
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap leading-tight">
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">S/N</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">EMP ID</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Name Of Worker</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Employment Type</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Gender</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Monthly Salary</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Work Day</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Rate/ Day</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap leading-tight">
                     Rate/
                     <br />
                     Hrs
@@ -1499,19 +1491,19 @@ export const OvertimeReportsTab: React.FC = () => {
                   {dayHeaders.map((d) => (
                     <th
                       key={`day-${d.day}`}
-                      className="border border-black px-0.5 py-1 text-center font-bold min-w-[20px]"
+                      className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-1 text-center font-bold min-w-[20px]"
                     >
                       {d.day}
                     </th>
                   ))}
-                  <th className="border border-black px-1.5 py-1 whitespace-nowrap leading-tight">
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap leading-tight">
                     Total
                     <br />
                     HR
                   </th>
-                  <th className="border border-black px-2 py-1 whitespace-nowrap">Amount</th>
-                  <th className="border border-black px-3 py-1 whitespace-nowrap min-w-[68px]">Signature</th>
-                  <th className="border border-black px-2 py-1 whitespace-nowrap min-w-[82px]">Mobil NO</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Amount</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-3 py-1 whitespace-nowrap min-w-[68px]">Signature</th>
+                  <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap min-w-[82px]">Mobil NO</th>
                 </tr>
               </thead>
 
@@ -1520,7 +1512,7 @@ export const OvertimeReportsTab: React.FC = () => {
                   <tr>
                     <td
                       colSpan={totalTableCols}
-                      className="border border-black py-6 text-center text-[11px] font-sans text-slate-500"
+                      className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] py-6 text-center text-[11px] font-sans text-slate-500"
                     >
                       No employees or overtime records found for the selected filters.
                     </td>
@@ -1528,47 +1520,47 @@ export const OvertimeReportsTab: React.FC = () => {
                 ) : (
                   deptOvertimeSheet.rows.map((row) => (
                     <tr key={`${row.empId}-${row.sn}`}>
-                      <td className="border border-black px-1 py-0.5 text-center">{row.sn}</td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 text-center">{row.sn}</td>
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
                         {row.empId}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-left font-bold whitespace-nowrap">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-left font-bold whitespace-nowrap">
                         {row.name}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                         {row.employmentType}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                         {row.gender}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                         {canViewCost ? row.monthlySalary : 'Restricted'}
                       </td>
-                      <td className="border border-black px-1 py-0.5 text-center font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 text-center font-sans">
                         {row.workDay}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                         {canViewCost ? row.ratePerDay : 'Restricted'}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                         {canViewCost ? row.ratePerHour : 'Restricted'}
                       </td>
                       {row.dailyHours.map((hrs, idx) => (
                         <td
                           key={`cell-${row.sn}-${idx}`}
-                          className="border border-black px-0.5 py-0.5 text-center font-sans"
+                          className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-0.5 text-center font-sans"
                         >
                           {hrs > 0 ? formatHoursValue(hrs) : ''}
                         </td>
                       ))}
-                      <td className="border border-black px-1.5 py-0.5 text-center font-bold font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-bold font-sans">
                         {formatHoursValue(row.totalHours)}
                       </td>
-                      <td className="border border-black px-1.5 py-0.5 text-center font-bold font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-bold font-sans">
                         {canViewCost ? row.totalAmount : 'Restricted'}
                       </td>
-                      <td className="border border-black px-2 py-0.5"></td>
-                      <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-0.5"></td>
+                      <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                         {row.mobileNo}
                       </td>
                     </tr>
@@ -1577,31 +1569,31 @@ export const OvertimeReportsTab: React.FC = () => {
 
                 {/* Total Row */}
                 <tr className="font-bold bg-white">
-                  <td colSpan={3} className="border border-black px-2 py-1 text-center text-[11px]">
+                  <td colSpan={3} className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 text-center text-[11px]">
                     Total
                   </td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
-                  <td className="border border-black px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
                   {deptOvertimeSheet.dailyTotals.map((daySum, idx) => (
                     <td
                       key={`tot-day-${idx}`}
-                      className="border border-black px-0.5 py-1 text-center font-sans"
+                      className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-1 text-center font-sans"
                     >
                       {formatHoursValue(daySum)}
                     </td>
                   ))}
-                  <td className="border border-black px-1.5 py-1 text-center font-sans">
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                     {formatHoursValue(deptOvertimeSheet.grandTotalHours)}
                   </td>
-                  <td className="border border-black px-1.5 py-1 text-center font-sans">
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                     {canViewCost ? deptOvertimeSheet.grandTotalAmount : 'Restricted'}
                   </td>
-                  <td className="border border-black px-2 py-1"></td>
-                  <td className="border border-black px-1.5 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1"></td>
                 </tr>
               </tbody>
             </table>
@@ -1625,7 +1617,10 @@ export const OvertimeReportsTab: React.FC = () => {
         </div>
       ) : (
         /* Report Data Table for Reports 1, 3-7 */
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div
+          ref={reportSheetRef}
+          className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
+        >
           <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
             <div className="flex items-center gap-2">
               <span className="font-bold text-sm text-slate-900">{activeReportDef.name}</span>
