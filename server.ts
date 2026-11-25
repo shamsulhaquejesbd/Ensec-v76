@@ -1279,16 +1279,25 @@ export function createAppServer() {
 
     const roleStr = String(caller.role || '');
     const payrollPerm = caller.permissions?.pagePermissions?.payroll;
-    const hasExplicitCreatePayroll = Boolean(payrollPerm?.actions?.create_payroll);
+    const hasExplicitCreatePayroll = Boolean(
+      payrollPerm?.create_payroll ?? payrollPerm?.actions?.create_payroll
+    );
+    const hasExplicitQuickAction = Boolean(
+      payrollPerm?.quick_action ?? payrollPerm?.actions?.quick_action
+    );
+    const isBulkRequest = Array.isArray(req.body?.records);
+    const hasConfiguredPayrollPerms = Boolean(payrollPerm && typeof payrollPerm === 'object');
     const canManageAttendance =
       roleStr === 'Super Admin' ||
-      hasExplicitCreatePayroll ||
-      (!payrollPerm?.actions && ['Admin', 'HR', 'Manager', 'Accountant'].includes(roleStr));
+      (isBulkRequest ? hasExplicitCreatePayroll : hasExplicitQuickAction) ||
+      (!hasConfiguredPayrollPerms && ['Admin', 'HR', 'Manager', 'Accountant'].includes(roleStr));
     if (!canManageAttendance) {
       return res.status(403).json({
         success: false,
         errorCode: 'ATTENDANCE_FORBIDDEN',
-        error: 'Permission denied: Process Monthly Payroll permission required.',
+        error: isBulkRequest
+          ? 'Permission denied: Process Monthly Payroll permission required.'
+          : 'Permission denied: Quick Action permission required.',
       });
     }
 

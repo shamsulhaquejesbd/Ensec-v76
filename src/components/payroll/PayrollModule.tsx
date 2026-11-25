@@ -188,6 +188,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
   const canViewPayroll =
     hasPageAccess('payroll') && payrollPagePerms.view && firstPermittedTab !== null;
   const canCreatePayroll = hasPageAction('payroll', 'create_payroll');
+  const canQuickActionAttendance = hasPageAction('payroll', 'quick_action');
   const canApprovePayroll = hasPageAction('payroll', 'approve_payroll');
   const canApproveLeave = hasPageAction('payroll', 'approve_leave');
   const canApproveAdvanceLoan = hasPageAction('payroll', 'approve_advance_loan');
@@ -208,6 +209,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
   const canApplyLeave = canSelectAnyLeaveEmployee || payrollPagePerms.leaves;
   const isReadOnlyPayrollUser =
     !canCreatePayroll &&
+    !canQuickActionAttendance &&
     !canApprovePayroll &&
     !canApproveLeave &&
     !canApproveAdvanceLoan &&
@@ -2901,7 +2903,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                           targetStatus?: AttendanceStatus,
                           overrideTimes?: { inTime?: string; outTime?: string }
                         ) => {
-                          if (!canCreatePayroll || isSavingRow) return;
+                          if (!canQuickActionAttendance || isSavingRow) return;
                           const shiftStart = empGeo.shiftStartTime || DEFAULT_SHIFT_START_TIME;
                           const shiftEnd = empGeo.shiftEndTime || DEFAULT_SHIFT_END_TIME;
                           const graceMins = empGeo.gracePeriodMinutes;
@@ -3040,7 +3042,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                               </span>
                             </td>
                             <td className="py-3 px-4 font-mono tabular-nums whitespace-nowrap">
-                              {canCreatePayroll ? (
+                              {canQuickActionAttendance ? (
                                 <Time12HourInput
                                   compact
                                   allowClear
@@ -3067,7 +3069,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                               )}
                             </td>
                             <td className="py-3 px-4 font-mono tabular-nums whitespace-nowrap">
-                              {canCreatePayroll ? (
+                              {canQuickActionAttendance ? (
                                 <Time12HourInput
                                   compact
                                   allowClear
@@ -3116,7 +3118,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                               </div>
                             </td>
                             <td className="py-3 px-4 text-right">
-                              {canCreatePayroll ? (
+                              {canQuickActionAttendance ? (
                                 <div className="inline-flex flex-wrap items-center justify-end gap-1">
                                   {(hasDraftChange || inValue || outValue) && (
                                     <button

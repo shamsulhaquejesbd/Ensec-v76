@@ -23,6 +23,7 @@ export type PayrollTab =
 
 export const PAYROLL_PAGE_PERMISSION_KEYS = {
   VIEW: 'view',
+  QUICK_ACTION: 'quick_action',
   VIEW_DASHBOARD: 'view_dashboard',
   VIEW_SALARY_STRUCTURE: 'view_salary_structure',
   VIEW_ATTENDANCE: 'view_attendance',
