@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Calendar, ChevronDown, Clock, Download, Filter, Printer } from 'lucide-react';
+import { Calendar, ChevronDown, Clock, Download, FileText, Filter, Printer } from 'lucide-react';
 import { useERP } from '../../context/ERPContext.tsx';
 import { formatTime12Hour } from '../../lib/geofence.ts';
 import { calculateDailyWagesShiftBreakdown } from '../../lib/dailyWagesCalculation.ts';
 import { findLinkedUserForEmployee } from '../../lib/fieldForceAuth.ts';
+import { exportElementToLandscapePdf } from '../../lib/landscapePdfExport.ts';
 
 interface DailyWagesBillFactoryProps {
   searchQuery: string;
@@ -27,10 +28,7 @@ interface DailyWagesRow {
   ratePerDay: number;
   ratePerHour: number;
   dailyRegularHours: number[];
-  dailyOvertimeHours: number[];
-  dailyHours: number[];
   regularHours: number;
-  overtimeHours: number;
   totalHours: number;
   presentDays: number;
   totalAmount: number;
@@ -210,6 +208,8 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
   const [isEmpTypeDropdownOpen, setIsEmpTypeDropdownOpen] = useState(false);
   const empTypeDropdownRef = useRef<HTMLDivElement>(null);
   const [genderFilter, setGenderFilter] = useState<string>('all');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const hasUserChangedMonthRef = useRef(false);
 
   // Keep month synced with the Attendance Date range if user hasn't manually changed the bill month
@@ -341,8 +341,8 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
     [activeYearNum, activeMonthNum]
   );
 
-  // 9 left metadata cols + daysInActiveMonth + 7 right summary/signature cols (Reg. HR, OT HR, Total HR, Present Day, Amount, Signature, Mobil NO)
-  const totalTableCols = 9 + daysInActiveMonth + 7;
+  // 9 left metadata cols + daysInActiveMonth + 6 right summary/signature cols (Reg. HR, Total HR, Present Day, Amount, Signature, Mobil NO)
+  const totalTableCols = 9 + daysInActiveMonth + 6;
 
   const dayHeaders = useMemo(() => {
     const shortWeekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -461,8 +461,6 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
       const ratePerHour = dailyWorkingHours > 0 ? Math.round(ratePerDay / dailyWorkingHours) : 0;
 
       const dailyRegularHours = new Array(daysInActiveMonth).fill(0);
-      const dailyOvertimeHours = new Array(daysInActiveMonth).fill(0);
-      const dailyHours = new Array(daysInActiveMonth).fill(0);
       const seenDayRecordKeys = new Set<string>();
 
       monthAttendanceRecords.forEach((rec) => {
@@ -477,8 +475,6 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
         const checkIn = rec.checkInTime || rec.inTime || '';
         const checkOut = rec.checkOutTime || rec.outTime || '';
         let regHrs = 0;
-        let otHrs = 0;
-        let totHrs = 0;
 
         if (checkIn && checkOut) {
           const breakdown = calculateDailyWagesShiftBreakdown({
@@ -488,8 +484,6 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
             defaultShiftStartTime: configuredShiftStartTime,
           });
           regHrs = breakdown.regularHours;
-          otHrs = breakdown.overtimeHours;
-          totHrs = breakdown.totalHours;
         } else if (
           rec.status !== 'Absent' &&
           rec.status !== 'Leave' &&
@@ -503,22 +497,17 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
             typeof rec.overtimeHours === 'number' && rec.overtimeHours > 0
               ? Math.min(Math.round(rec.overtimeHours * 100) / 100, manualTotal)
               : 0;
-          otHrs = manualOt;
-          regHrs = Math.max(0, Math.round((manualTotal - otHrs) * 100) / 100);
-          totHrs = Math.round((regHrs + otHrs) * 100) / 100;
+          regHrs = Math.max(0, Math.round((manualTotal - manualOt) * 100) / 100);
         }
 
-        if (totHrs > 0 || regHrs > 0 || otHrs > 0) {
+        if (regHrs > 0) {
           const idx = parsed.day - 1;
           dailyRegularHours[idx] = Math.round((dailyRegularHours[idx] + regHrs) * 100) / 100;
-          dailyOvertimeHours[idx] = Math.round((dailyOvertimeHours[idx] + otHrs) * 100) / 100;
-          dailyHours[idx] = Math.round((dailyHours[idx] + totHrs) * 100) / 100;
         }
       });
 
       const regularHours = Math.round(dailyRegularHours.reduce((sum, h) => sum + h, 0) * 100) / 100;
-      const overtimeHours = Math.round(dailyOvertimeHours.reduce((sum, h) => sum + h, 0) * 100) / 100;
-      const totalHours = Math.round((regularHours + overtimeHours) * 100) / 100;
+      const totalHours = regularHours;
       const presentDays = dailyWorkingHours > 0 ? totalHours / dailyWorkingHours : 0;
       const totalAmount =
         workDay > 0 && dailyWorkingHours > 0
@@ -536,10 +525,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
         ratePerDay,
         ratePerHour,
         dailyRegularHours,
-        dailyOvertimeHours,
-        dailyHours,
         regularHours,
-        overtimeHours,
         totalHours,
         presentDays,
         totalAmount,
@@ -549,22 +535,19 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
 
     const dailyTotals = new Array(daysInActiveMonth).fill(0);
     let grandRegularHours = 0;
-    let grandOvertimeHours = 0;
     let grandTotalHours = 0;
     let grandTotalAmount = 0;
 
     rows.forEach((row) => {
-      row.dailyHours.forEach((h, i) => {
+      row.dailyRegularHours.forEach((h, i) => {
         dailyTotals[i] = Math.round((dailyTotals[i] + h) * 100) / 100;
       });
       grandRegularHours += row.regularHours;
-      grandOvertimeHours += row.overtimeHours;
       grandTotalHours += row.totalHours;
       grandTotalAmount += row.totalAmount;
     });
 
     grandRegularHours = Math.round(grandRegularHours * 100) / 100;
-    grandOvertimeHours = Math.round(grandOvertimeHours * 100) / 100;
     grandTotalHours = Math.round(grandTotalHours * 100) / 100;
     const grandPresentDays = dailyWorkingHours > 0 ? grandTotalHours / dailyWorkingHours : 0;
 
@@ -572,7 +555,6 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
       rows,
       dailyTotals,
       grandRegularHours,
-      grandOvertimeHours,
       grandTotalHours,
       grandPresentDays,
       grandTotalAmount: Math.round(grandTotalAmount),
@@ -618,7 +600,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
     sheetRows.push([
       '', '', '', '', '', '', '', '', '',
       ...dayHeaders.map((d) => d.weekday),
-      '', '', '', '', '', '', '',
+      '', '', '', '', '', '',
     ]);
     sheetRows.push([
       'S/N',
@@ -632,7 +614,6 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
       'Rate/ Hrs',
       ...dayHeaders.map((d) => d.day),
       'Reg. HR',
-      'OT HR',
       'Total HR',
       'Present Day',
       'Amount',
@@ -651,9 +632,8 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
         row.workDay,
         row.ratePerDay,
         row.ratePerHour,
-        ...row.dailyHours.map((h) => (h > 0 ? Number(h.toFixed(2)) : '')),
+        ...row.dailyRegularHours.map((h) => (h > 0 ? Number(h.toFixed(2)) : '')),
         row.regularHours > 0 ? Number(row.regularHours.toFixed(2)) : 0,
-        row.overtimeHours > 0 ? Number(row.overtimeHours.toFixed(2)) : 0,
         row.totalHours > 0 ? Number(row.totalHours.toFixed(2)) : 0,
         row.presentDays > 0 ? Number(row.presentDays.toFixed(2)) : 0,
         row.totalAmount,
@@ -674,7 +654,6 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
       '',
       ...wagesBillSheet.dailyTotals.map((t) => (t > 0 ? Number(t.toFixed(2)) : '')),
       wagesBillSheet.grandRegularHours > 0 ? Number(wagesBillSheet.grandRegularHours.toFixed(2)) : 0,
-      wagesBillSheet.grandOvertimeHours > 0 ? Number(wagesBillSheet.grandOvertimeHours.toFixed(2)) : 0,
       wagesBillSheet.grandTotalHours > 0 ? Number(wagesBillSheet.grandTotalHours.toFixed(2)) : 0,
       wagesBillSheet.grandPresentDays > 0 ? Number(wagesBillSheet.grandPresentDays.toFixed(2)) : 0,
       wagesBillSheet.grandTotalAmount,
@@ -708,6 +687,19 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Daily Wages Bill');
     XLSX.writeFile(wb, `Daily_Wages_Bill_Factory_${activeYearMonth}.xlsx`);
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!canExport || !sheetRef.current || isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      await exportElementToLandscapePdf({
+        element: sheetRef.current,
+        fileName: `Daily_Wages_Bill_Factory_${activeYearMonth}.pdf`,
+      });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   return (
@@ -843,7 +835,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
         </div>
 
         {canExport && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handlePrint}
@@ -851,6 +843,15 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Print Report</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isGeneratingPdf}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-2xs transition-colors"
+            >
+              <FileText className={`w-3.5 h-3.5 ${isGeneratingPdf ? 'animate-pulse' : ''}`} />
+              <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
             </button>
             <button
               type="button"
@@ -866,6 +867,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
 
       {/* Exact Screenshot-Style Daily Wages Bill of Factory Sheet */}
       <div
+        ref={sheetRef}
         id="daily-wages-bill-sheet"
         className="bg-white text-black rounded-2xl border border-slate-300 shadow-2xs p-4 font-serif print:border-none print:shadow-none print:p-0"
       >
@@ -881,68 +883,66 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[10px] text-black">
+          <table className="w-full border-separate border-spacing-0 border-t-[0.75px] border-l-[0.75px] border-[#1a1a1a] text-[10px] text-black">
             <thead>
               {/* Sub-header Row: blank cells on left/right, Weekday labels above 1..daysInMonth */}
               <tr>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
                 {dayHeaders.map((d) => (
                   <th
                     key={`wk-${d.day}`}
-                    className="border border-black px-0.5 py-0.5 text-center font-normal text-[9px] bg-white min-w-[20px]"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-0.5 text-center font-normal text-[9px] bg-white min-w-[20px]"
                   >
                     {d.weekday}
                   </th>
                 ))}
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
               </tr>
 
               {/* Main Header Row */}
               <tr className="font-bold text-center bg-white">
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">S/N</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">EMP ID</th>
-                <th className="border border-black px-2 py-1 whitespace-nowrap">Name Of Worker</th>
-                <th className="border border-black px-2 py-1 whitespace-nowrap">Employment Type</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Gender</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Monthly Salary</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap leading-tight">
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">S/N</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">EMP ID</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Name Of Worker</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Employment Type</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Gender</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Monthly Salary</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap leading-tight">
                   Work
                   <br />
                   Day
                 </th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Rate/ Day</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Rate/ Hrs</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Rate/ Day</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Rate/ Hrs</th>
                 {dayHeaders.map((d) => (
                   <th
                     key={`day-${d.day}`}
-                    className="border border-black px-0.5 py-1 text-center font-bold min-w-[20px]"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-1 text-center font-bold min-w-[20px]"
                   >
                     {d.day}
                   </th>
                 ))}
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Reg. HR</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">OT HR</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Total HR</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Present Day</th>
-                <th className="border border-black px-2 py-1 whitespace-nowrap">Amount</th>
-                <th className="border border-black px-3 py-1 whitespace-nowrap min-w-[72px]">
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Reg. HR</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Total HR</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Present Day</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Amount</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-3 py-1 whitespace-nowrap min-w-[72px]">
                   Signature
                 </th>
-                <th className="border border-black px-2 py-1 whitespace-nowrap min-w-[84px]">
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap min-w-[84px]">
                   Mobil NO
                 </th>
               </tr>
@@ -953,7 +953,7 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
                 <tr>
                   <td
                     colSpan={totalTableCols}
-                    className="border border-black py-6 text-center text-[11px] font-sans text-slate-500"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] py-6 text-center text-[11px] font-sans text-slate-500"
                   >
                     No employees or attendance records found for the selected filters.
                   </td>
@@ -961,80 +961,56 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
               ) : (
                 wagesBillSheet.rows.map((row) => (
                   <tr key={`${row.empId}-${row.sn}`}>
-                    <td className="border border-black px-1 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 text-center font-sans">
                       {row.sn}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
                       {row.empId}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-left font-bold whitespace-nowrap">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-left font-bold whitespace-nowrap">
                       {row.name}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                       {row.employmentType}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                       {row.gender}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.monthlySalary}
                     </td>
-                    <td className="border border-black px-1 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 text-center font-sans">
                       {row.workDay}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.ratePerDay}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.ratePerHour}
                     </td>
-                    {row.dailyHours.map((hrs, idx) => {
-                      const reg = row.dailyRegularHours[idx] || 0;
-                      const ot = row.dailyOvertimeHours[idx] || 0;
-                      return (
-                        <td
-                          key={`cell-${row.sn}-${idx}`}
-                          title={
-                            hrs > 0
-                              ? `Regular: ${formatHoursValue(reg)}h | OT: ${formatHoursValue(ot)}h | Total: ${formatHoursValue(hrs)}h`
-                              : undefined
-                          }
-                          className="border border-black px-0.5 py-0.5 text-center font-sans leading-tight"
-                        >
-                          {hrs > 0 ? (
-                            ot > 0 ? (
-                              <div className="flex flex-col items-center">
-                                <span>{formatHoursValue(reg)}</span>
-                                <span className="text-[8px] font-semibold">
-                                  +{formatHoursValue(ot)}
-                                </span>
-                              </div>
-                            ) : (
-                              formatHoursValue(reg)
-                            )
-                          ) : (
-                            ''
-                          )}
-                        </td>
-                      );
-                    })}
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    {row.dailyRegularHours.map((reg, idx) => (
+                      <td
+                        key={`cell-${row.sn}-${idx}`}
+                        title={reg > 0 ? `Regular: ${formatHoursValue(reg)}h` : undefined}
+                        className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-0.5 text-center font-sans leading-tight"
+                      >
+                        {reg > 0 ? formatHoursValue(reg) : ''}
+                      </td>
+                    ))}
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {formatHoursValue(row.regularHours)}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
-                      {formatHoursValue(row.overtimeHours)}
-                    </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans font-semibold">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans font-semibold">
                       {formatHoursValue(row.totalHours)}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {formatPresentDayValue(row.presentDays)}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.totalAmount}
                     </td>
-                    <td className="border border-black px-2 py-0.5"></td>
-                    <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-0.5"></td>
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                       {row.mobileNo}
                     </td>
                   </tr>
@@ -1043,40 +1019,37 @@ export const DailyWagesBillFactory: React.FC<DailyWagesBillFactoryProps> = ({
 
               {/* Total Row */}
               <tr className="font-bold bg-white">
-                <td colSpan={3} className="border border-black px-2 py-1 text-center text-[11px]">
+                <td colSpan={3} className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 text-center text-[11px]">
                   Total
                 </td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
                 {wagesBillSheet.dailyTotals.map((daySum, idx) => (
                   <td
                     key={`tot-day-${idx}`}
-                    className="border border-black px-0.5 py-1 text-center font-sans"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-1 text-center font-sans"
                   >
                     {daySum > 0 ? formatHoursValue(daySum) : ''}
                   </td>
                 ))}
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {formatHoursValue(wagesBillSheet.grandRegularHours)}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
-                  {formatHoursValue(wagesBillSheet.grandOvertimeHours)}
-                </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {formatHoursValue(wagesBillSheet.grandTotalHours)}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {formatPresentDayValue(wagesBillSheet.grandPresentDays)}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {wagesBillSheet.grandTotalAmount}
                 </td>
-                <td className="border border-black px-2 py-1"></td>
-                <td className="border border-black px-1.5 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1"></td>
               </tr>
             </tbody>
           </table>

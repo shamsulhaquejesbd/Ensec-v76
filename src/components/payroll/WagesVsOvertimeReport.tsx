@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { Calendar, ChevronDown, Clock, Download, Filter, Printer } from 'lucide-react';
+import { Calendar, ChevronDown, Clock, Download, FileText, Filter, Printer } from 'lucide-react';
 import { useERP } from '../../context/ERPContext.tsx';
 import { formatTime12Hour } from '../../lib/geofence.ts';
 import { calculateDailyWagesShiftBreakdown } from '../../lib/dailyWagesCalculation.ts';
 import { findLinkedUserForEmployee } from '../../lib/fieldForceAuth.ts';
+import { exportElementToLandscapePdf } from '../../lib/landscapePdfExport.ts';
 
 interface WagesVsOvertimeReportProps {
   searchQuery: string;
@@ -222,6 +223,8 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
   const [isEmpTypeDropdownOpen, setIsEmpTypeDropdownOpen] = useState(false);
   const empTypeDropdownRef = useRef<HTMLDivElement>(null);
   const [genderFilter, setGenderFilter] = useState<string>('all');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const sheetRef = useRef<HTMLDivElement>(null);
   const hasUserChangedMonthRef = useRef(false);
 
   useEffect(() => {
@@ -751,6 +754,19 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
     XLSX.writeFile(wb, `Wages_vs_Overtime_${activeYearMonth}.xlsx`);
   };
 
+  const handleDownloadPdf = async () => {
+    if (!canExport || !sheetRef.current || isGeneratingPdf) return;
+    setIsGeneratingPdf(true);
+    try {
+      await exportElementToLandscapePdf({
+        element: sheetRef.current,
+        fileName: `Wages_vs_Overtime_${activeYearMonth}.pdf`,
+      });
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-3">
       {/* Report Filter & Action Bar */}
@@ -887,7 +903,7 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
         </div>
 
         {canExport && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={handlePrint}
@@ -895,6 +911,15 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
             >
               <Printer className="w-3.5 h-3.5" />
               <span>Print Report</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              disabled={isGeneratingPdf}
+              className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-2xs transition-colors"
+            >
+              <FileText className={`w-3.5 h-3.5 ${isGeneratingPdf ? 'animate-pulse' : ''}`} />
+              <span>{isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}</span>
             </button>
             <button
               type="button"
@@ -910,6 +935,7 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
 
       {/* Exact Screenshot-Style Wages vs Overtime Sheet */}
       <div
+        ref={sheetRef}
         id="wages-vs-overtime-sheet"
         className="bg-white text-black rounded-2xl border border-slate-300 shadow-2xs p-4 font-serif print:border-none print:shadow-none print:p-0"
       >
@@ -925,72 +951,72 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-[10px] text-black">
+          <table className="w-full border-separate border-spacing-0 border-t-[0.75px] border-l-[0.75px] border-[#1a1a1a] text-[10px] text-black">
             <thead>
               {/* Sub-header Row: blank cells on left/right, Weekday labels above 1..daysInMonth */}
               <tr>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
                 {dayHeaders.map((d) => (
                   <th
                     key={`wk-${d.day}`}
-                    className="border border-black px-0.5 py-0.5 text-center font-normal text-[9px] bg-white min-w-[20px]"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-0.5 text-center font-normal text-[9px] bg-white min-w-[20px]"
                   >
                     {d.weekday}
                   </th>
                 ))}
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
-                <th className="border border-black px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 bg-white"></th>
               </tr>
 
               {/* Main Header Row */}
               <tr className="font-bold text-center bg-white">
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">S/N</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">EMP ID</th>
-                <th className="border border-black px-2 py-1 whitespace-nowrap">Name Of Worker</th>
-                <th className="border border-black px-2 py-1 whitespace-nowrap">Employment Type</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Gender</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Monthly Salary</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap leading-tight">
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">S/N</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">EMP ID</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Name Of Worker</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Employment Type</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Gender</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Monthly Salary</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap leading-tight">
                   Work
                   <br />
                   Day
                 </th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Rate/ Day</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Rate/ Hrs</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Rate/ Day</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Rate/ Hrs</th>
                 {dayHeaders.map((d) => (
                   <th
                     key={`day-${d.day}`}
-                    className="border border-black px-0.5 py-1 text-center font-bold min-w-[20px]"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-1 text-center font-bold min-w-[20px]"
                   >
                     {d.day}
                   </th>
                 ))}
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Reg. HR</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">OT HR</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Total HR</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Present Day</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">Reg. HR Amt</th>
-                <th className="border border-black px-1.5 py-1 whitespace-nowrap">OT HR Amt</th>
-                <th className="border border-black px-2 py-1 whitespace-nowrap">Amount</th>
-                <th className="border border-black px-3 py-1 whitespace-nowrap min-w-[72px]">
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Reg. HR</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">OT HR</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Total HR</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Present Day</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">Reg. HR Amt</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 whitespace-nowrap">OT HR Amt</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap">Amount</th>
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-3 py-1 whitespace-nowrap min-w-[72px]">
                   Signature
                 </th>
-                <th className="border border-black px-2 py-1 whitespace-nowrap min-w-[84px]">
+                <th className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 whitespace-nowrap min-w-[84px]">
                   Mobil NO
                 </th>
               </tr>
@@ -1001,7 +1027,7 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
                 <tr>
                   <td
                     colSpan={totalTableCols}
-                    className="border border-black py-6 text-center text-[11px] font-sans text-slate-500"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] py-6 text-center text-[11px] font-sans text-slate-500"
                   >
                     No active employees or attendance records found for the selected filters.
                   </td>
@@ -1009,31 +1035,31 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
               ) : (
                 reportSheet.rows.map((row) => (
                   <tr key={`${row.empId}-${row.sn}`}>
-                    <td className="border border-black px-1 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 text-center font-sans">
                       {row.sn}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-bold whitespace-nowrap">
                       {row.empId}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-left font-bold whitespace-nowrap">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-left font-bold whitespace-nowrap">
                       {row.name}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                       {row.employmentType}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                       {row.gender}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.monthlySalary}
                     </td>
-                    <td className="border border-black px-1 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-0.5 text-center font-sans">
                       {row.workDay}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.ratePerDay}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.ratePerHour}
                     </td>
                     {row.dailyHours.map((hrs, idx) => {
@@ -1047,7 +1073,7 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
                               ? `Regular: ${formatHoursValue(reg)}h | Qualified OT (>1h): ${formatHoursValue(ot)}h | Total: ${formatHoursValue(hrs)}h`
                               : undefined
                           }
-                          className="border border-black px-0.5 py-0.5 text-center font-sans leading-tight"
+                          className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-0.5 text-center font-sans leading-tight"
                         >
                           {hrs > 0 ? (
                             ot > 0 ? (
@@ -1066,29 +1092,29 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
                         </td>
                       );
                     })}
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {formatHoursValue(row.regularHours)}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {formatHoursValue(row.overtimeHours)}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans font-semibold">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans font-semibold">
                       {formatHoursValue(row.totalHours)}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {formatPresentDayValue(row.presentDays)}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.regHrAmount}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans">
                       {row.otHrAmount}
                     </td>
-                    <td className="border border-black px-1.5 py-0.5 text-center font-sans font-semibold">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center font-sans font-semibold">
                       {row.totalAmount}
                     </td>
-                    <td className="border border-black px-2 py-0.5"></td>
-                    <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-0.5"></td>
+                    <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
                       {row.mobileNo}
                     </td>
                   </tr>
@@ -1097,46 +1123,46 @@ export const WagesVsOvertimeReport: React.FC<WagesVsOvertimeReportProps> = ({
 
               {/* Total Row */}
               <tr className="font-bold bg-white">
-                <td colSpan={3} className="border border-black px-2 py-1 text-center text-[11px]">
+                <td colSpan={3} className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 text-center text-[11px]">
                   Total
                 </td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
-                <td className="border border-black px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
                 {reportSheet.dailyTotals.map((daySum, idx) => (
                   <td
                     key={`tot-day-${idx}`}
-                    className="border border-black px-0.5 py-1 text-center font-sans"
+                    className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-1 text-center font-sans"
                   >
                     {daySum > 0 ? formatHoursValue(daySum) : ''}
                   </td>
                 ))}
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {formatHoursValue(reportSheet.grandRegularHours)}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {formatHoursValue(reportSheet.grandOvertimeHours)}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {formatHoursValue(reportSheet.grandTotalHours)}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {formatPresentDayValue(reportSheet.grandPresentDays)}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {reportSheet.grandRegHrAmount}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {reportSheet.grandOtHrAmount}
                 </td>
-                <td className="border border-black px-1.5 py-1 text-center font-sans">
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                   {reportSheet.grandTotalAmount}
                 </td>
-                <td className="border border-black px-2 py-1"></td>
-                <td className="border border-black px-1.5 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1"></td>
+                <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1"></td>
               </tr>
             </tbody>
           </table>
