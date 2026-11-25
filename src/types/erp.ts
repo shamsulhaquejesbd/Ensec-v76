@@ -1180,6 +1180,10 @@ export interface CRMLeadAgreement {
   expectedClosingDate?: string;
   lastContactDate?: string;
   contractTermMonths?: number | null;
+  medium?: string;
+  vehicleType?: string;
+  personalInfo?: string;
+  status?: string;
   notes?: any[];
   communicationNotes?: any[];
   agreedSpecialDiscountPercent?: number;

@@ -1715,7 +1715,10 @@ CREATE TABLE IF NOT EXISTS public.crm_agreements (
   expected_closing_date DATE,
   communication_notes JSONB DEFAULT '[]'::jsonb, -- Array of { date, author, note }
   tags TEXT[] DEFAULT '{}',
-  status TEXT DEFAULT 'Active',                  -- 'Active' | 'Archived' | 'Suspended'
+  medium TEXT,
+  vehicle_type TEXT,
+  personal_info TEXT,
+  status TEXT DEFAULT 'Active',                  -- 'Active' | 'Pending' | 'Follow-up' | 'Converted' | 'On Hold' | 'Inactive' | 'Archived'
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1744,6 +1747,9 @@ ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS last_contact_date DAT
 ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS expected_closing_date DATE;
 ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS communication_notes JSONB DEFAULT '[]'::jsonb;
 ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';
+ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS medium TEXT;
+ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS vehicle_type TEXT;
+ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS personal_info TEXT;
 ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Active';
 ALTER TABLE public.crm_agreements ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 

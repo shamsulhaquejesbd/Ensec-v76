@@ -6256,14 +6256,23 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .order('id', { ascending: false });
 
         if (!error && Array.isArray(data)) {
-          let localAddressMap = new Map<string, string>();
+          let localExtrasMap = new Map<
+            string,
+            { address?: string; medium?: string; vehicleType?: string; personalInfo?: string; status?: string }
+          >();
           if (typeof window !== 'undefined') {
             try {
               const cached = JSON.parse(localStorage.getItem('ensec_crm_agreements') || '[]');
               if (Array.isArray(cached)) {
                 cached.forEach((item: any) => {
-                  if (item?.id && item?.address) {
-                    localAddressMap.set(String(item.id), String(item.address));
+                  if (item?.id) {
+                    localExtrasMap.set(String(item.id), {
+                      address: item.address ? String(item.address) : '',
+                      medium: item.medium ? String(item.medium) : '',
+                      vehicleType: item.vehicleType ? String(item.vehicleType) : '',
+                      personalInfo: item.personalInfo ? String(item.personalInfo) : '',
+                      status: item.status ? String(item.status) : '',
+                    });
                   }
                 });
               }
@@ -6272,13 +6281,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           const mapped: CRMLeadAgreement[] = data.map((row: any) => {
             const dealId = row.deal_code ? String(row.deal_code) : `crm-${row.id}`;
+            const cachedExtras = localExtrasMap.get(dealId);
             const hasRemoteAddressCol = Object.prototype.hasOwnProperty.call(row, 'address');
+            const hasRemoteMediumCol = Object.prototype.hasOwnProperty.call(row, 'medium');
+            const hasRemoteVehicleTypeCol = Object.prototype.hasOwnProperty.call(row, 'vehicle_type');
+            const hasRemotePersonalInfoCol = Object.prototype.hasOwnProperty.call(row, 'personal_info');
             return {
               id: dealId,
               clientName: row.client_name || row.company_name || 'Corporate Lead',
               companyName: row.company_name || row.client_name || '',
               phone: row.phone || '',
-              address: hasRemoteAddressCol ? (row.address || '') : (localAddressMap.get(dealId) || ''),
+              address: hasRemoteAddressCol ? (row.address || '') : (cachedExtras?.address || ''),
+              medium: hasRemoteMediumCol ? (row.medium || '') : (cachedExtras?.medium || ''),
+              vehicleType: hasRemoteVehicleTypeCol ? (row.vehicle_type || '') : (cachedExtras?.vehicleType || ''),
+              personalInfo: hasRemotePersonalInfoCol ? (row.personal_info || '') : (cachedExtras?.personalInfo || ''),
+              status: row.status || cachedExtras?.status || 'Active',
               stage: (row.stage as any) || 'Lead',
               expectedVolumeUnits:
                 row.expected_volume_units !== null && row.expected_volume_units !== undefined && row.expected_volume_units !== '' && Number.isFinite(Number(row.expected_volume_units))
@@ -15884,6 +15901,19 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     addAuditLog('PRODUCT_CHANNEL_PRICES_UPDATED', 'Pricing Engine', `Updated channel price tiers for product ID ${productId}`);
   };
 
+  const isMissingOptionalCRMColumnError = (error: any): boolean => {
+    if (!error) return false;
+    const msg = String(error.message || '').toLowerCase();
+    return (
+      error.code === 'PGRST204' ||
+      error.code === '42703' ||
+      msg.includes('address') ||
+      msg.includes('medium') ||
+      msg.includes('vehicle_type') ||
+      msg.includes('personal_info')
+    );
+  };
+
   const addCRMLead = async (lead: Omit<CRMLeadAgreement, 'id'>) => {
     const id = `CRM-${Date.now().toString().slice(-5)}`;
     const newDeal: CRMLeadAgreement = {
@@ -15893,6 +15923,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       companyName: (lead.companyName || lead.clientName || 'Corporate Lead').trim(),
       phone: (lead.phone || '+880 1700-000000').trim(),
       address: (lead.address || '').trim(),
+      medium: (lead.medium || '').trim(),
+      vehicleType: (lead.vehicleType || '').trim(),
+      personalInfo: (lead.personalInfo || '').trim(),
+      status: (lead.status || 'Active').trim(),
     };
     setCrmAgreements((prev) => {
       const next = [newDeal, ...prev];
@@ -15938,14 +15972,25 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           salesperson_name: newDeal.salespersonName || currentUser.name || 'Tanvir Hossain',
           last_contact_date: newDeal.lastContactDate || new Date().toISOString().substring(0, 10),
           communication_notes: newDeal.communicationNotes || [],
-          status: 'Active',
+          status: newDeal.status || 'Active',
+        };
+        const payloadWithAddress = { ...basePayload, address: newDeal.address || null };
+        const payloadWithAllExtras = {
+          ...payloadWithAddress,
+          medium: newDeal.medium || null,
+          vehicle_type: newDeal.vehicleType || null,
+          personal_info: newDeal.personalInfo || null,
         };
         let { error } = await sb
           .from('crm_agreements')
-          .upsert({ ...basePayload, address: newDeal.address || null }, { onConflict: 'deal_code' });
-        if (error && (error.message?.toLowerCase().includes('address') || error.code === 'PGRST204' || error.code === '42703')) {
-          const retryRes = await sb.from('crm_agreements').upsert(basePayload, { onConflict: 'deal_code' });
-          error = retryRes.error;
+          .upsert(payloadWithAllExtras, { onConflict: 'deal_code' });
+        if (error && isMissingOptionalCRMColumnError(error)) {
+          const retryWithAddress = await sb.from('crm_agreements').upsert(payloadWithAddress, { onConflict: 'deal_code' });
+          error = retryWithAddress.error;
+          if (error && isMissingOptionalCRMColumnError(error)) {
+            const retryBase = await sb.from('crm_agreements').upsert(basePayload, { onConflict: 'deal_code' });
+            error = retryBase.error;
+          }
         }
         if (error) {
           syncError = error.message;
@@ -15972,6 +16017,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       companyName: (lead.companyName || lead.clientName || `Lead ${idx + 1}`).trim(),
       phone: (lead.phone || '+880 1700-000000').trim(),
       address: (lead.address || '').trim(),
+      medium: (lead.medium || '').trim(),
+      vehicleType: (lead.vehicleType || '').trim(),
+      personalInfo: (lead.personalInfo || '').trim(),
+      status: (lead.status || 'Active').trim(),
     }));
     setCrmAgreements((prev) => {
       const next = [...newDeals, ...prev];
@@ -16027,7 +16076,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           salesperson_name: d.salespersonName || currentUser.name || 'Tanvir Hossain',
           last_contact_date: d.lastContactDate || new Date().toISOString().substring(0, 10),
           communication_notes: d.communicationNotes || [],
-          status: 'Active',
+          status: d.status || 'Active',
         }));
 
         const payloadWithAddress = basePayload.map((row, idx) => ({
@@ -16035,10 +16084,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           address: newDeals[idx].address || null,
         }));
 
-        let { error } = await sb.from('crm_agreements').upsert(payloadWithAddress, { onConflict: 'deal_code' });
-        if (error && (error.message?.toLowerCase().includes('address') || error.code === 'PGRST204' || error.code === '42703')) {
-          const retryRes = await sb.from('crm_agreements').upsert(basePayload, { onConflict: 'deal_code' });
-          error = retryRes.error;
+        const payloadWithAllExtras = payloadWithAddress.map((row, idx) => ({
+          ...row,
+          medium: newDeals[idx].medium || null,
+          vehicle_type: newDeals[idx].vehicleType || null,
+          personal_info: newDeals[idx].personalInfo || null,
+        }));
+
+        let { error } = await sb.from('crm_agreements').upsert(payloadWithAllExtras, { onConflict: 'deal_code' });
+        if (error && isMissingOptionalCRMColumnError(error)) {
+          const retryWithAddress = await sb.from('crm_agreements').upsert(payloadWithAddress, { onConflict: 'deal_code' });
+          error = retryWithAddress.error;
+          if (error && isMissingOptionalCRMColumnError(error)) {
+            const retryBase = await sb.from('crm_agreements').upsert(basePayload, { onConflict: 'deal_code' });
+            error = retryBase.error;
+          }
         }
         if (error) {
           syncError = error.message;
@@ -16095,7 +16155,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         salesperson_name: d.salespersonName || currentUser.name || 'Tanvir Hossain',
         last_contact_date: d.lastContactDate || new Date().toISOString().substring(0, 10),
         communication_notes: d.communicationNotes || [],
-        status: 'Active',
+        status: d.status || 'Active',
       }));
 
       const payloadWithAddress = basePayload.map((row, idx) => ({
@@ -16103,10 +16163,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         address: crmAgreements[idx].address || null,
       }));
 
-      let { error } = await sb.from('crm_agreements').upsert(payloadWithAddress, { onConflict: 'deal_code' });
-      if (error && (error.message?.toLowerCase().includes('address') || error.code === 'PGRST204' || error.code === '42703')) {
-        const retryRes = await sb.from('crm_agreements').upsert(basePayload, { onConflict: 'deal_code' });
-        error = retryRes.error;
+      const payloadWithAllExtras = payloadWithAddress.map((row, idx) => ({
+        ...row,
+        medium: crmAgreements[idx].medium || null,
+        vehicle_type: crmAgreements[idx].vehicleType || null,
+        personal_info: crmAgreements[idx].personalInfo || null,
+      }));
+
+      let { error } = await sb.from('crm_agreements').upsert(payloadWithAllExtras, { onConflict: 'deal_code' });
+      if (error && isMissingOptionalCRMColumnError(error)) {
+        const retryWithAddress = await sb.from('crm_agreements').upsert(payloadWithAddress, { onConflict: 'deal_code' });
+        error = retryWithAddress.error;
+        if (error && isMissingOptionalCRMColumnError(error)) {
+          const retryBase = await sb.from('crm_agreements').upsert(basePayload, { onConflict: 'deal_code' });
+          error = retryBase.error;
+        }
       }
       if (error) {
         return { success: false, count: 0, error: error.message };
@@ -16262,14 +16333,25 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               salesperson_name: updatedDeal.salespersonName || currentUser.name || 'Tanvir Hossain',
               last_contact_date: noteObj.date,
               communication_notes: updatedNotes,
-              status: 'Active',
+              status: updatedDeal.status || 'Active',
+            };
+            const upsertWithAddress = { ...baseUpsertPayload, address: updatedDeal.address || null };
+            const upsertWithAllExtras = {
+              ...upsertWithAddress,
+              medium: updatedDeal.medium || null,
+              vehicle_type: updatedDeal.vehicleType || null,
+              personal_info: updatedDeal.personalInfo || null,
             };
             let { error: upsertErr } = await sb
               .from('crm_agreements')
-              .upsert({ ...baseUpsertPayload, address: updatedDeal.address || null }, { onConflict: 'deal_code' });
-            if (upsertErr && (upsertErr.message?.toLowerCase().includes('address') || upsertErr.code === 'PGRST204' || upsertErr.code === '42703')) {
-              const retryRes = await sb.from('crm_agreements').upsert(baseUpsertPayload, { onConflict: 'deal_code' });
-              upsertErr = retryRes.error;
+              .upsert(upsertWithAllExtras, { onConflict: 'deal_code' });
+            if (upsertErr && isMissingOptionalCRMColumnError(upsertErr)) {
+              const retryWithAddress = await sb.from('crm_agreements').upsert(upsertWithAddress, { onConflict: 'deal_code' });
+              upsertErr = retryWithAddress.error;
+              if (upsertErr && isMissingOptionalCRMColumnError(upsertErr)) {
+                const retryBase = await sb.from('crm_agreements').upsert(baseUpsertPayload, { onConflict: 'deal_code' });
+                upsertErr = retryBase.error;
+              }
             }
             if (!upsertErr) {
               isRemoteSynced = true;
@@ -16425,6 +16507,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       companyName: (updates.companyName ?? currentDeal.companyName ?? currentDeal.clientName ?? 'Corporate Lead').trim(),
       phone: (updates.phone ?? currentDeal.phone ?? '+880 1700-000000').trim(),
       address: updates.address !== undefined ? updates.address.trim() : (currentDeal.address || ''),
+      medium: updates.medium !== undefined ? updates.medium.trim() : (currentDeal.medium || ''),
+      vehicleType: updates.vehicleType !== undefined ? updates.vehicleType.trim() : (currentDeal.vehicleType || ''),
+      personalInfo: updates.personalInfo !== undefined ? updates.personalInfo.trim() : (currentDeal.personalInfo || ''),
+      status: updates.status !== undefined ? (updates.status.trim() || 'Active') : (currentDeal.status || 'Active'),
       stage: updates.stage ?? currentDeal.stage ?? 'Lead',
       expectedVolumeUnits:
         updates.expectedVolumeUnits !== undefined
@@ -16473,6 +16559,7 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           company_name: updatedDeal.companyName,
           phone: updatedDeal.phone,
           stage: updatedDeal.stage,
+          status: updatedDeal.status || 'Active',
           expected_volume_units: toNullableNum(updatedDeal.expectedVolumeUnits),
           estimated_value_bdt: toNullableNum(updatedDeal.estimatedValueBDT),
           deal_value_bdt: toNullableNum(updatedDeal.dealValueBDT),
@@ -16484,14 +16571,22 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         const runUpdate = async (useNumericId: boolean) => {
           const payloadWithAddress = { ...baseFields, address: updatedDeal.address || null };
-          const query = useNumericId
-            ? sb.from('crm_agreements').update(payloadWithAddress).eq('id', Number(dealCodeStr.replace(/^crm-?/i, ''))).select()
-            : sb.from('crm_agreements').update(payloadWithAddress).ilike('deal_code', dealCodeStr).select();
-          let res = await query;
-          if (res.error && (res.error.message?.toLowerCase().includes('address') || res.error.code === 'PGRST204' || res.error.code === '42703')) {
-            res = useNumericId
-              ? await sb.from('crm_agreements').update(baseFields).eq('id', Number(dealCodeStr.replace(/^crm-?/i, ''))).select()
-              : await sb.from('crm_agreements').update(baseFields).ilike('deal_code', dealCodeStr).select();
+          const payloadWithAllExtras = {
+            ...payloadWithAddress,
+            medium: updatedDeal.medium || null,
+            vehicle_type: updatedDeal.vehicleType || null,
+            personal_info: updatedDeal.personalInfo || null,
+          };
+          const execute = (fields: Record<string, any>) =>
+            useNumericId
+              ? sb.from('crm_agreements').update(fields).eq('id', Number(dealCodeStr.replace(/^crm-?/i, ''))).select()
+              : sb.from('crm_agreements').update(fields).ilike('deal_code', dealCodeStr).select();
+          let res = await execute(payloadWithAllExtras);
+          if (res.error && isMissingOptionalCRMColumnError(res.error)) {
+            res = await execute(payloadWithAddress);
+            if (res.error && isMissingOptionalCRMColumnError(res.error)) {
+              res = await execute(baseFields);
+            }
           }
           return res;
         };
@@ -16513,14 +16608,24 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               deal_code: updatedDeal.id,
               ...baseFields,
               communication_notes: updatedDeal.communicationNotes || [],
-              status: 'Active',
+            };
+            const upsertWithAddress = { ...upsertBase, address: updatedDeal.address || null };
+            const upsertWithAllExtras = {
+              ...upsertWithAddress,
+              medium: updatedDeal.medium || null,
+              vehicle_type: updatedDeal.vehicleType || null,
+              personal_info: updatedDeal.personalInfo || null,
             };
             let { error: upsertErr } = await sb
               .from('crm_agreements')
-              .upsert({ ...upsertBase, address: updatedDeal.address || null }, { onConflict: 'deal_code' });
-            if (upsertErr && (upsertErr.message?.toLowerCase().includes('address') || upsertErr.code === 'PGRST204' || upsertErr.code === '42703')) {
-              const retryRes = await sb.from('crm_agreements').upsert(upsertBase, { onConflict: 'deal_code' });
-              upsertErr = retryRes.error;
+              .upsert(upsertWithAllExtras, { onConflict: 'deal_code' });
+            if (upsertErr && isMissingOptionalCRMColumnError(upsertErr)) {
+              const retryWithAddress = await sb.from('crm_agreements').upsert(upsertWithAddress, { onConflict: 'deal_code' });
+              upsertErr = retryWithAddress.error;
+              if (upsertErr && isMissingOptionalCRMColumnError(upsertErr)) {
+                const retryBase = await sb.from('crm_agreements').upsert(upsertBase, { onConflict: 'deal_code' });
+                upsertErr = retryBase.error;
+              }
             }
             if (!upsertErr) {
               isRemoteSynced = true;

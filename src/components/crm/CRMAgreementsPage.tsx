@@ -34,9 +34,62 @@ import {
   HelpCircle,
   MapPin,
   Edit3,
+  Car,
+  UserCheck,
+  Radio,
+  Activity,
 } from 'lucide-react';
 import { useERP } from '../../context/ERPContext.tsx';
 import { CRMLeadAgreement } from '../../types/erp.ts';
+
+const MEDIUM_OPTIONS = [
+  'Direct Visit',
+  'Phone Call',
+  'Facebook',
+  'WhatsApp',
+  'Website',
+  'Referral',
+  'Field Force',
+  'Trade Fair',
+  'Walk-in',
+];
+
+const VEHICLE_TYPE_OPTIONS = [
+  'Easy Bike',
+  'Auto Rickshaw',
+  'Mishuk',
+  'Electric Van / Pickup',
+  'E-Bike / Scooter',
+  'Car / SUV',
+  'Commercial Bus / Truck',
+  'Solar / Telecom Backup',
+  'Other',
+];
+
+const STATUS_OPTIONS = [
+  'Active',
+  'Pending',
+  'Follow-up',
+  'Qualified',
+  'Converted',
+  'On Hold',
+  'Inactive',
+  'Closed',
+];
+
+const getStatusBadgeClasses = (status?: string) => {
+  const s = (status || 'Active').toLowerCase();
+  if (s === 'active' || s === 'converted' || s === 'qualified') {
+    return 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+  }
+  if (s === 'pending' || s === 'follow-up' || s === 'on hold') {
+    return 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800';
+  }
+  if (s === 'inactive' || s === 'closed') {
+    return 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800';
+  }
+  return 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+};
 
 const STAGE_CONFIG: Record<
   CRMLeadAgreement['stage'],
@@ -166,6 +219,9 @@ export const CRMAgreementsPage: React.FC = () => {
   const [rawPastedCSV, setRawPastedCSV] = useState('');
   const [uploadInputMode, setUploadInputMode] = useState<'file' | 'paste'>('file');
   const [uploadDefaultAddress, setUploadDefaultAddress] = useState('');
+  const [uploadDefaultMedium, setUploadDefaultMedium] = useState('');
+  const [uploadDefaultVehicleType, setUploadDefaultVehicleType] = useState('');
+  const [uploadDefaultStatus, setUploadDefaultStatus] = useState('Active');
   const [isImporting, setIsImporting] = useState(false);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const [isSavingNote, setIsSavingNote] = useState(false);
@@ -179,6 +235,10 @@ export const CRMAgreementsPage: React.FC = () => {
   const [dealCompanyName, setDealCompanyName] = useState('');
   const [dealPhone, setDealPhone] = useState('');
   const [dealAddress, setDealAddress] = useState('');
+  const [dealMedium, setDealMedium] = useState('');
+  const [dealVehicleType, setDealVehicleType] = useState('');
+  const [dealPersonalInfo, setDealPersonalInfo] = useState('');
+  const [dealStatus, setDealStatus] = useState('Active');
   const [dealVolumeUnits, setDealVolumeUnits] = useState(100);
   const [dealEstValueBDT, setDealEstValueBDT] = useState(11500000);
   const [dealTermMonths, setDealTermMonths] = useState(12);
@@ -192,6 +252,10 @@ export const CRMAgreementsPage: React.FC = () => {
   const [editCompanyName, setEditCompanyName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editAddress, setEditAddress] = useState('');
+  const [editMedium, setEditMedium] = useState('');
+  const [editVehicleType, setEditVehicleType] = useState('');
+  const [editPersonalInfo, setEditPersonalInfo] = useState('');
+  const [editStatus, setEditStatus] = useState('Active');
   const [editVolumeUnits, setEditVolumeUnits] = useState('');
   const [editEstValueBDT, setEditEstValueBDT] = useState('');
   const [editTermMonths, setEditTermMonths] = useState('');
@@ -209,6 +273,10 @@ export const CRMAgreementsPage: React.FC = () => {
     setEditCompanyName(deal.companyName || '');
     setEditPhone(deal.phone || '');
     setEditAddress(deal.address || '');
+    setEditMedium(deal.medium || '');
+    setEditVehicleType(deal.vehicleType || '');
+    setEditPersonalInfo(deal.personalInfo || '');
+    setEditStatus(deal.status || 'Active');
     setEditVolumeUnits(
       deal.expectedVolumeUnits !== null && deal.expectedVolumeUnits !== undefined
         ? String(deal.expectedVolumeUnits)
@@ -255,6 +323,10 @@ export const CRMAgreementsPage: React.FC = () => {
         companyName: editCompanyName.trim(),
         phone: editPhone.trim(),
         address: editAddress.trim(),
+        medium: editMedium.trim(),
+        vehicleType: editVehicleType.trim(),
+        personalInfo: editPersonalInfo.trim(),
+        status: editStatus.trim() || 'Active',
         expectedVolumeUnits: parseNullableInput(editVolumeUnits),
         estimatedValueBDT: parsedValue,
         dealValueBDT: parsedValue,
@@ -336,6 +408,10 @@ export const CRMAgreementsPage: React.FC = () => {
         (deal.companyName && deal.companyName.toLowerCase().includes(search)) ||
         (deal.phone && deal.phone.toLowerCase().includes(search)) ||
         (deal.address && deal.address.toLowerCase().includes(search)) ||
+        (deal.medium && deal.medium.toLowerCase().includes(search)) ||
+        (deal.vehicleType && deal.vehicleType.toLowerCase().includes(search)) ||
+        (deal.personalInfo && deal.personalInfo.toLowerCase().includes(search)) ||
+        (deal.status && deal.status.toLowerCase().includes(search)) ||
         (deal.salespersonName && deal.salespersonName.toLowerCase().includes(search));
 
       // 2. Stage filter
@@ -386,6 +462,10 @@ export const CRMAgreementsPage: React.FC = () => {
       companyName: dealCompanyName.trim(),
       phone: dealPhone.trim(),
       address: dealAddress.trim(),
+      medium: dealMedium.trim(),
+      vehicleType: dealVehicleType.trim(),
+      personalInfo: dealPersonalInfo.trim(),
+      status: dealStatus.trim() || 'Active',
       stage: dealStage,
       expectedVolumeUnits: Number(dealVolumeUnits) || 100,
       estimatedValueBDT: Number(dealEstValueBDT) || 0,
@@ -410,6 +490,10 @@ export const CRMAgreementsPage: React.FC = () => {
     setDealCompanyName('');
     setDealPhone('');
     setDealAddress('');
+    setDealMedium('');
+    setDealVehicleType('');
+    setDealPersonalInfo('');
+    setDealStatus('Active');
     setDealVolumeUnits(100);
     setDealEstValueBDT(11500000);
     setDealTermMonths(12);
@@ -500,7 +584,11 @@ export const CRMAgreementsPage: React.FC = () => {
       company: headers.findIndex((h) => h.includes('company') || h.includes('org') || h.includes('customer') || h.includes('account')),
       phone: headers.findIndex((h) => h.includes('phone') || h.includes('mobile') || h.includes('contact')),
       address: headers.findIndex((h) => h.includes('address') || h.includes('location') || h.includes('addr') || h.includes('street')),
-      stage: headers.findIndex((h) => h.includes('stage') || h.includes('status')),
+      medium: headers.findIndex((h) => h.includes('medium') || h.includes('source') || h.includes('channel')),
+      vehicleType: headers.findIndex((h) => h.includes('vehicle') || h.includes('vehicletype')),
+      personalInfo: headers.findIndex((h) => h.includes('personal') || h.includes('personalinfo') || h.includes('ownerinfo') || h.includes('bio')),
+      status: headers.findIndex((h) => h === 'status' || h === 'leadstatus' || h.includes('leadstatus')),
+      stage: headers.findIndex((h) => h.includes('stage') || h.includes('pipeline')),
       volume: headers.findIndex((h) => h.includes('volume') || h.includes('unit') || h.includes('qty')),
       value: headers.findIndex((h) => h.includes('value') || h.includes('bdt') || h.includes('amount') || h.includes('est') || h.includes('price')),
       term: headers.findIndex((h) => h.includes('term') || h.includes('month') || h.includes('duration')),
@@ -523,19 +611,38 @@ export const CRMAgreementsPage: React.FC = () => {
       const phone = colIndex.phone !== -1 ? row[colIndex.phone] : '+880 1700-000000';
       const rawAddress = colIndex.address !== -1 && row[colIndex.address] ? row[colIndex.address].trim() : '';
       const address = rawAddress || uploadDefaultAddress.trim();
+      const rawMedium = colIndex.medium !== -1 && row[colIndex.medium] ? row[colIndex.medium].trim() : '';
+      const medium = rawMedium || uploadDefaultMedium.trim();
+      const rawVehicleType = colIndex.vehicleType !== -1 && row[colIndex.vehicleType] ? row[colIndex.vehicleType].trim() : '';
+      const vehicleType = rawVehicleType || uploadDefaultVehicleType.trim();
+      const personalInfo = colIndex.personalInfo !== -1 && row[colIndex.personalInfo] ? row[colIndex.personalInfo].trim() : '';
 
-      // Parse Stage
+      const rawStatusCell = colIndex.status !== -1 && row[colIndex.status] ? row[colIndex.status].trim() : '';
+      const rawStageCell = colIndex.stage !== -1 && row[colIndex.stage] ? row[colIndex.stage].trim() : '';
+
+      // Parse Stage (support legacy CSVs where Status column carried Stage when no Stage column exists)
+      const stageSourceText = rawStageCell || (colIndex.stage === -1 ? rawStatusCell : '');
       let stage: CRMLeadAgreement['stage'] = 'Lead';
-      const rawStage = (colIndex.stage !== -1 ? row[colIndex.stage] : '').toLowerCase();
+      const rawStage = stageSourceText.toLowerCase();
+      let statusUsedForStage = false;
       if (rawStage.includes('sign') || rawStage.includes('exec') || rawStage.includes('win') || rawStage.includes('contract')) {
         stage = 'Agreement Signed';
+        if (!rawStageCell) statusUsedForStage = true;
       } else if (rawStage.includes('prop') || rawStage.includes('offer') || rawStage.includes('sent')) {
         stage = 'Proposal Sent';
+        if (!rawStageCell) statusUsedForStage = true;
       } else if (rawStage.includes('cont') || rawStage.includes('meet') || rawStage.includes('call') || rawStage.includes('pitch')) {
         stage = 'Contacted';
-      } else if (rawStage.includes('lost') || rawStage.includes('close') || rawStage.includes('drop')) {
+        if (!rawStageCell) statusUsedForStage = true;
+      } else if (rawStage.includes('lost') || rawStage.includes('drop')) {
         stage = 'Lost';
+        if (!rawStageCell) statusUsedForStage = true;
+      } else if (!rawStageCell && rawStage === 'lead') {
+        stage = 'Lead';
+        statusUsedForStage = true;
       }
+
+      const status = (!statusUsedForStage && rawStatusCell) ? rawStatusCell : (uploadDefaultStatus.trim() || 'Active');
 
       const parseOptionalNumericCell = (rawValue: string): number | null => {
         const trimmed = (rawValue || '').trim();
@@ -576,6 +683,10 @@ export const CRMAgreementsPage: React.FC = () => {
         companyName,
         phone,
         address,
+        medium,
+        vehicleType,
+        personalInfo,
+        status,
         stage,
         expectedVolumeUnits: volumeNum,
         estimatedValueBDT: valueNum,
@@ -684,6 +795,9 @@ export const CRMAgreementsPage: React.FC = () => {
     setUploadFileName('');
     setRawPastedCSV('');
     setUploadDefaultAddress('');
+    setUploadDefaultMedium('');
+    setUploadDefaultVehicleType('');
+    setUploadDefaultStatus('Active');
   };
 
   const handleSyncAllToSupabase = async () => {
@@ -729,11 +843,11 @@ export const CRMAgreementsPage: React.FC = () => {
   // Download Sample Template CSV
   const handleDownloadSampleCSV = () => {
     const sampleRows = [
-      'Client Name,Company Name,Phone,Address,Stage,Expected Volume Units,Estimated Value BDT,Contract Term Months,Salesperson Name,Contact Date,Notes',
-      '"Grameenphone Telecom Power Backup","Grameenphone Limited","+880 1700-112233","GPHouse, Bashundhara R/A, Dhaka-1229","Agreement Signed",500,57500000,24,"Tanvir Hossain","2026-10-15","Master supply contract for 48V 100Ah lithium iron phosphate packs"',
-      '"Banglalink Regional BTS Expansion","Banglalink Digital Communications","+880 1911-223344","Tigers Den, House 4, Gulshan-1, Dhaka","Proposal Sent",350,42000000,24,"Tanvir Hossain","2026-10-25","Submitted technical proposal and credit pricing schedule"',
-      '"Robi Axiata Microgrid Storage","Robi Axiata Limited","+880 1819-998877","53 Gulshan South Avenue, Dhaka-1212","Contacted",200,24000000,12,"Zubair Ahmed","2026-10-20","Initial technical meeting completed for solar microgrid backup"',
-      '"Navana Logistics Fleet Energy","Navana Group","+880 1712-334455","125/A Motijheel C/A, Dhaka-1000","Lead",150,18500000,18,"Tanvir Hossain","2026-10-28","Customer requested commercial price matrix and test unit"',
+      'Client Name,Company Name,Phone,Address,Medium,Vehicle Type,Personal Info,Status,Stage,Expected Volume Units,Estimated Value BDT,Contract Term Months,Salesperson Name,Contact Date,Notes',
+      '"Grameenphone Telecom Power Backup","Grameenphone Limited","+880 1700-112233","GPHouse, Bashundhara R/A, Dhaka-1229","Direct Visit","Solar / Telecom Backup","Tariqul Islam, Head of Energy Ops","Active","Agreement Signed",500,57500000,24,"Tanvir Hossain","2026-10-15","Master supply contract for 48V 100Ah lithium iron phosphate packs"',
+      '"Banglalink Regional BTS Expansion","Banglalink Digital Communications","+880 1911-223344","Tigers Den, House 4, Gulshan-1, Dhaka","Phone Call","Solar / Telecom Backup","Mahmudul Hasan, Procurement Lead","Follow-up","Proposal Sent",350,42000000,24,"Tanvir Hossain","2026-10-25","Submitted technical proposal and credit pricing schedule"',
+      '"Dhaka EV Fleet Swap Hub","Green Mobility Bangladesh","+880 1819-998877","53 Tejgaon Industrial Area, Dhaka-1208","Facebook","Easy Bike","Karim Uddin, Fleet Owner (18 vehicles)","Qualified","Contacted",200,24000000,12,"Zubair Ahmed","2026-10-20","Initial technical meeting completed for EV battery packs"',
+      '"Navana Logistics Fleet Energy","Navana Group","+880 1712-334455","125/A Motijheel C/A, Dhaka-1000","WhatsApp","Electric Van / Pickup","Sajjad Hossain, Operations Manager","Pending","Lead",150,18500000,18,"Tanvir Hossain","2026-10-28","Customer requested commercial price matrix and test unit"',
     ];
     const csvContent = sampleRows.join('\r\n');
     const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -760,6 +874,10 @@ export const CRMAgreementsPage: React.FC = () => {
       'Company Name',
       'Phone',
       'Address',
+      'Medium',
+      'Vehicle Type',
+      'Personal Info',
+      'Status',
       'Pipeline Stage',
       'Volume (Units)',
       'Estimated Value (BDT)',
@@ -788,6 +906,10 @@ export const CRMAgreementsPage: React.FC = () => {
         escapeCSV(deal.companyName),
         escapeCSV(deal.phone),
         escapeCSV(deal.address || ''),
+        escapeCSV(deal.medium || ''),
+        escapeCSV(deal.vehicleType || ''),
+        escapeCSV(deal.personalInfo || ''),
+        escapeCSV(deal.status || 'Active'),
         escapeCSV(deal.stage),
         escapeCSV(deal.expectedVolumeUnits ?? ''),
         escapeCSV(deal.estimatedValueBDT ?? ''),
@@ -1176,12 +1298,21 @@ export const CRMAgreementsPage: React.FC = () => {
                         : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs'
                     }`}
                   >
-                    {/* Row 1: Title + Stage + Edit */}
+                    {/* Row 1: Title + Status + Stage + Edit */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="font-bold text-xs text-slate-900 dark:text-white truncate min-w-0">
                         {deal.clientName}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
+                        {deal.status && (
+                          <span
+                            className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border ${getStatusBadgeClasses(
+                              deal.status
+                            )}`}
+                          >
+                            {deal.status}
+                          </span>
+                        )}
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold border ${stageStyle.bg} ${stageStyle.text} ${stageStyle.border}`}
                         >
@@ -1203,8 +1334,8 @@ export const CRMAgreementsPage: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Row 2: Company & Address inline */}
-                    <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 min-w-0">
+                    {/* Row 2: Company, Address, Medium & Vehicle Type inline */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400 min-w-0">
                       <span className="inline-flex items-center gap-1 truncate min-w-0">
                         <Building2 className="w-3 h-3 text-slate-400 shrink-0" />
                         <span className="truncate">{deal.companyName}</span>
@@ -1214,6 +1345,20 @@ export const CRMAgreementsPage: React.FC = () => {
                           <span>•</span>
                           <MapPin className="w-2.5 h-2.5 text-slate-400 shrink-0" />
                           <span className="truncate">{deal.address}</span>
+                        </span>
+                      )}
+                      {deal.medium && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 shrink-0">
+                          <span>•</span>
+                          <Radio className="w-2.5 h-2.5 shrink-0" />
+                          <span>{deal.medium}</span>
+                        </span>
+                      )}
+                      {deal.vehicleType && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-teal-600 dark:text-teal-400 shrink-0">
+                          <span>•</span>
+                          <Car className="w-2.5 h-2.5 shrink-0" />
+                          <span>{deal.vehicleType}</span>
                         </span>
                       )}
                     </div>
@@ -1363,6 +1508,55 @@ export const CRMAgreementsPage: React.FC = () => {
                 </div>
               )}
 
+              {/* Lead Profile Details: Medium, Vehicle Type, Status, Personal Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1 mb-1">
+                    <Radio className="w-3 h-3 text-indigo-500" />
+                    <span>Medium</span>
+                  </span>
+                  <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 block">
+                    {selectedDeal.medium || '—'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1 mb-1">
+                    <Car className="w-3 h-3 text-teal-500" />
+                    <span>Vehicle Type</span>
+                  </span>
+                  <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 block">
+                    {selectedDeal.vehicleType || '—'}
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
+                  <span className="text-[10px] text-slate-400 uppercase font-bold flex items-center gap-1 mb-1">
+                    <Activity className="w-3 h-3 text-emerald-500" />
+                    <span>Status</span>
+                  </span>
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold border ${getStatusBadgeClasses(
+                      selectedDeal.status
+                    )}`}
+                  >
+                    {selectedDeal.status || 'Active'}
+                  </span>
+                </div>
+              </div>
+
+              {selectedDeal.personalInfo && (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800 flex items-start gap-2.5 text-xs">
+                  <UserCheck className="w-4 h-4 text-purple-600 dark:text-purple-400 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold block">Personal Info</span>
+                    <span className="text-slate-700 dark:text-slate-200 font-medium whitespace-pre-line">
+                      {selectedDeal.personalInfo}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Sales Rep Ownership Info */}
               <div className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 flex items-center justify-between text-xs">
                 <div className="flex items-center gap-2.5">
@@ -1506,10 +1700,22 @@ export const CRMAgreementsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Shared Datalists for Medium & Vehicle Type */}
+      <datalist id="crm-medium-options">
+        {MEDIUM_OPTIONS.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
+      <datalist id="crm-vehicle-type-options">
+        {VEHICLE_TYPE_OPTIONS.map((opt) => (
+          <option key={opt} value={opt} />
+        ))}
+      </datalist>
+
       {/* MODAL 1: CSV LEAD UPLOAD MODAL */}
       {showUploadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-in fade-in">
-          <div className="w-full max-w-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+          <div className="w-full max-w-5xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl shadow-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-4">
               <div className="flex items-center gap-3">
@@ -1521,7 +1727,7 @@ export const CRMAgreementsPage: React.FC = () => {
                     Bulk Upload CRM Leads (CSV)
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Import institutional prospects, project agreements, and volume contracts from spreadsheet data
+                    Import institutional prospects, project agreements, medium, vehicle type, personal info, and status from spreadsheet data
                   </p>
                 </div>
               </div>
@@ -1542,7 +1748,7 @@ export const CRMAgreementsPage: React.FC = () => {
                 <div>
                   <span className="font-bold text-blue-900 dark:text-blue-200">Need the standard spreadsheet template?</span>
                   <p className="text-[11px] text-blue-700 dark:text-blue-300 mt-0.5">
-                    Download our formatted CSV template with required headers (Client Name, Company, Phone, Address, Stage, Volume, Value BDT, Term, Notes).
+                    Download our formatted CSV template with headers (Client Name, Company, Phone, Address, Medium, Vehicle Type, Personal Info, Status, Stage, Volume, Value BDT, Term, Notes).
                   </p>
                 </div>
               </div>
@@ -1557,14 +1763,14 @@ export const CRMAgreementsPage: React.FC = () => {
               </button>
             </div>
 
-            {/* Address Input Option for Uploaded Leads */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-              <div className="flex items-center justify-between gap-2">
-                <label className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+            {/* Default Fallback Options for Uploaded Leads */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 space-y-3 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-teal-600 dark:text-teal-400" />
-                  <span>Customer / Default Address (Optional)</span>
-                </label>
-                {uploadParsedLeads.length > 0 && uploadDefaultAddress.trim() && (
+                  <span>Default Lead Details (Optional — used if CSV columns are blank)</span>
+                </span>
+                {uploadParsedLeads.length > 0 && (
                   <button
                     type="button"
                     onClick={() =>
@@ -1572,22 +1778,78 @@ export const CRMAgreementsPage: React.FC = () => {
                         prev.map((lead) => ({
                           ...lead,
                           address: lead.address?.trim() ? lead.address : uploadDefaultAddress.trim(),
+                          medium: lead.medium?.trim() ? lead.medium : uploadDefaultMedium.trim(),
+                          vehicleType: lead.vehicleType?.trim() ? lead.vehicleType : uploadDefaultVehicleType.trim(),
+                          status: lead.status?.trim() ? lead.status : (uploadDefaultStatus.trim() || 'Active'),
                         }))
                       )
                     }
                     className="text-[11px] font-semibold text-teal-600 dark:text-teal-400 hover:underline cursor-pointer"
                   >
-                    Fill Empty Addresses
+                    Apply Defaults to Empty Fields
                   </button>
                 )}
               </div>
-              <input
-                type="text"
-                value={uploadDefaultAddress}
-                onChange={(e) => setUploadDefaultAddress(e.target.value)}
-                placeholder="e.g. Plot 45, Gulshan Avenue, Dhaka 1212 (used if CSV row has no Address)"
-                className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-teal-500/20"
-              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                    Default Address
+                  </label>
+                  <input
+                    type="text"
+                    value={uploadDefaultAddress}
+                    onChange={(e) => setUploadDefaultAddress(e.target.value)}
+                    placeholder="e.g. Plot 45, Gulshan, Dhaka"
+                    className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-teal-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                    Default Medium
+                  </label>
+                  <input
+                    type="text"
+                    list="crm-medium-options"
+                    value={uploadDefaultMedium}
+                    onChange={(e) => setUploadDefaultMedium(e.target.value)}
+                    placeholder="e.g. Facebook, Direct Visit"
+                    className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-teal-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                    Default Vehicle Type
+                  </label>
+                  <input
+                    type="text"
+                    list="crm-vehicle-type-options"
+                    value={uploadDefaultVehicleType}
+                    onChange={(e) => setUploadDefaultVehicleType(e.target.value)}
+                    placeholder="e.g. Easy Bike, Auto Rickshaw"
+                    className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-teal-500/20"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block mb-1">
+                    Default Status
+                  </label>
+                  <select
+                    value={uploadDefaultStatus}
+                    onChange={(e) => setUploadDefaultStatus(e.target.value)}
+                    className="w-full p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white cursor-pointer focus:outline-hidden focus:ring-2 focus:ring-teal-500/20"
+                  >
+                    {STATUS_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
             </div>
 
             {/* Input Mode Toggle (File Drop vs Paste Text) */}
@@ -1677,7 +1939,7 @@ export const CRMAgreementsPage: React.FC = () => {
                   rows={5}
                   value={rawPastedCSV}
                   onChange={(e) => setRawPastedCSV(e.target.value)}
-                  placeholder={`Client Name,Company Name,Phone,Address,Stage,Expected Volume Units,Estimated Value BDT,Contract Term Months,Salesperson Name,Contact Date,Notes\n"Banglalink BTS","Banglalink","+880 1911-223344","Gulshan-1, Dhaka","Proposal Sent",350,42000000,24,"Tanvir Hossain","2026-10-25","Lead for telecom backup"`}
+                  placeholder={`Client Name,Company Name,Phone,Address,Medium,Vehicle Type,Personal Info,Status,Stage,Expected Volume Units,Estimated Value BDT,Contract Term Months,Salesperson Name,Contact Date,Notes\n"Dhaka EV Fleet","Green Mobility","+880 1911-223344","Gulshan-1, Dhaka","Facebook","Easy Bike","Karim Uddin, Fleet Owner","Active","Proposal Sent",350,42000000,24,"Tanvir Hossain","2026-10-25","Lead for EV packs"`}
                   className="w-full p-3 font-mono text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none"
                 />
                 <button
@@ -1707,14 +1969,18 @@ export const CRMAgreementsPage: React.FC = () => {
                   </span>
                 </div>
 
-                <div className="max-h-56 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-800/80 sticky top-0 text-[11px] font-bold text-slate-600 dark:text-slate-300">
+                <div className="max-h-64 overflow-auto border border-slate-200 dark:border-slate-800 rounded-xl">
+                  <table className="w-full text-left text-xs min-w-[1020px]">
+                    <thead className="bg-slate-100 dark:bg-slate-800/80 sticky top-0 z-10 text-[11px] font-bold text-slate-600 dark:text-slate-300">
                       <tr>
                         <th className="p-2">#</th>
                         <th className="p-2">Client / Project</th>
                         <th className="p-2">Company</th>
                         <th className="p-2">Address</th>
+                        <th className="p-2">Medium</th>
+                        <th className="p-2">Vehicle Type</th>
+                        <th className="p-2">Personal Info</th>
+                        <th className="p-2">Status</th>
                         <th className="p-2">Stage</th>
                         <th className="p-2 text-right">Units</th>
                         <th className="p-2 text-right">Value (BDT)</th>
@@ -1732,7 +1998,7 @@ export const CRMAgreementsPage: React.FC = () => {
                           <td className="p-2 text-slate-600 dark:text-slate-300 truncate max-w-[120px]">
                             {lead.companyName}
                           </td>
-                          <td className="p-2 min-w-[140px]">
+                          <td className="p-2 min-w-[130px]">
                             <input
                               type="text"
                               value={lead.address || ''}
@@ -1748,8 +2014,81 @@ export const CRMAgreementsPage: React.FC = () => {
                               className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-teal-500"
                             />
                           </td>
+                          <td className="p-2 min-w-[115px]">
+                            <input
+                              type="text"
+                              list="crm-medium-options"
+                              value={lead.medium || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setUploadParsedLeads((prev) =>
+                                  prev.map((item, itemIdx) =>
+                                    itemIdx === idx ? { ...item, medium: val } : item
+                                  )
+                                );
+                              }}
+                              placeholder="Medium..."
+                              className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-teal-500"
+                            />
+                          </td>
+                          <td className="p-2 min-w-[125px]">
+                            <input
+                              type="text"
+                              list="crm-vehicle-type-options"
+                              value={lead.vehicleType || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setUploadParsedLeads((prev) =>
+                                  prev.map((item, itemIdx) =>
+                                    itemIdx === idx ? { ...item, vehicleType: val } : item
+                                  )
+                                );
+                              }}
+                              placeholder="Vehicle type..."
+                              className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-teal-500"
+                            />
+                          </td>
+                          <td className="p-2 min-w-[140px]">
+                            <input
+                              type="text"
+                              value={lead.personalInfo || ''}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setUploadParsedLeads((prev) =>
+                                  prev.map((item, itemIdx) =>
+                                    itemIdx === idx ? { ...item, personalInfo: val } : item
+                                  )
+                                );
+                              }}
+                              placeholder="Personal info..."
+                              className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-teal-500"
+                            />
+                          </td>
+                          <td className="p-2 min-w-[105px]">
+                            <select
+                              value={lead.status || 'Active'}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setUploadParsedLeads((prev) =>
+                                  prev.map((item, itemIdx) =>
+                                    itemIdx === idx ? { ...item, status: val } : item
+                                  )
+                                );
+                              }}
+                              className="w-full px-2 py-1 text-[11px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-hidden focus:ring-1 focus:ring-teal-500"
+                            >
+                              {!STATUS_OPTIONS.includes(lead.status || 'Active') && (
+                                <option value={lead.status}>{lead.status}</option>
+                              )}
+                              {STATUS_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
                           <td className="p-2">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 whitespace-nowrap">
                               {lead.stage}
                             </span>
                           </td>
@@ -1758,7 +2097,7 @@ export const CRMAgreementsPage: React.FC = () => {
                               ? lead.expectedVolumeUnits.toLocaleString()
                               : '—'}
                           </td>
-                          <td className="p-2 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
+                          <td className="p-2 text-right font-mono font-bold text-blue-600 dark:text-blue-400 whitespace-nowrap">
                             {lead.estimatedValueBDT !== null && lead.estimatedValueBDT !== undefined
                               ? `৳ ${lead.estimatedValueBDT.toLocaleString()}`
                               : '—'}
@@ -1794,6 +2133,9 @@ export const CRMAgreementsPage: React.FC = () => {
                   setUploadParsedLeads([]);
                   setUploadError(null);
                   setUploadDefaultAddress('');
+                  setUploadDefaultMedium('');
+                  setUploadDefaultVehicleType('');
+                  setUploadDefaultStatus('Active');
                 }}
                 className="px-4 py-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 font-semibold text-xs cursor-pointer"
               >
@@ -1897,6 +2239,66 @@ export const CRMAgreementsPage: React.FC = () => {
                   onChange={(e) => setDealAddress(e.target.value)}
                   placeholder="e.g. GPHouse, Bashundhara R/A, Dhaka-1229"
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Medium
+                  </label>
+                  <input
+                    type="text"
+                    list="crm-medium-options"
+                    value={dealMedium}
+                    onChange={(e) => setDealMedium(e.target.value)}
+                    placeholder="e.g. Facebook, Direct Visit"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Vehicle Type
+                  </label>
+                  <input
+                    type="text"
+                    list="crm-vehicle-type-options"
+                    value={dealVehicleType}
+                    onChange={(e) => setDealVehicleType(e.target.value)}
+                    placeholder="e.g. Easy Bike, Auto Rickshaw"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={dealStatus}
+                    onChange={(e) => setDealStatus(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    {STATUS_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Personal Info
+                </label>
+                <textarea
+                  rows={2}
+                  value={dealPersonalInfo}
+                  onChange={(e) => setDealPersonalInfo(e.target.value)}
+                  placeholder="e.g. Contact person name, designation, NID/personal details, fleet ownership background..."
+                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400"
                 />
               </div>
 
@@ -2092,6 +2494,69 @@ export const CRMAgreementsPage: React.FC = () => {
                   onChange={(e) => setEditAddress(e.target.value)}
                   placeholder="Customer / site address"
                   className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Medium
+                  </label>
+                  <input
+                    type="text"
+                    list="crm-medium-options"
+                    value={editMedium}
+                    onChange={(e) => setEditMedium(e.target.value)}
+                    placeholder="e.g. Facebook, Direct Visit"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Vehicle Type
+                  </label>
+                  <input
+                    type="text"
+                    list="crm-vehicle-type-options"
+                    value={editVehicleType}
+                    onChange={(e) => setEditVehicleType(e.target.value)}
+                    placeholder="e.g. Easy Bike, Auto Rickshaw"
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white cursor-pointer"
+                  >
+                    {!STATUS_OPTIONS.includes(editStatus || 'Active') && (
+                      <option value={editStatus}>{editStatus}</option>
+                    )}
+                    {STATUS_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Personal Info
+                </label>
+                <textarea
+                  rows={2}
+                  value={editPersonalInfo}
+                  onChange={(e) => setEditPersonalInfo(e.target.value)}
+                  placeholder="Contact person name, designation, NID/personal details, fleet ownership background..."
+                  className="w-full p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400"
                 />
               </div>
 
