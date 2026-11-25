@@ -105,6 +105,7 @@ import {
 } from '../../lib/fieldForceAuth.ts';
 import { EmployeeAttendanceCardModal } from './EmployeeAttendanceCardModal.tsx';
 import { DailyWagesBillFactory } from './DailyWagesBillFactory.tsx';
+import { WagesVsOvertimeReport } from './WagesVsOvertimeReport.tsx';
 import { Time12HourInput } from '../common/Time12HourInput.tsx';
 import { QrAttendanceScannerModal } from './QrAttendanceScannerModal.tsx';
 import {
@@ -267,7 +268,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
 
   // Attendance Report & GPS Audit Filter States
   const currentMonthStartIso = `${currentMonthIso}-01`;
-  const [attSubView, setAttSubView] = useState<'report' | 'daily_grid' | 'daily_wages_bill'>('report');
+  const [attSubView, setAttSubView] = useState<'report' | 'daily_grid' | 'daily_wages_bill' | 'wages_vs_overtime'>('report');
   const [attPeriodMode, setAttPeriodMode] = useState<'daily' | 'weekly' | 'monthly' | 'custom'>('monthly');
   const [attDateFrom, setAttDateFrom] = useState<string>(currentMonthStartIso);
   const [attDateTo, setAttDateTo] = useState<string>(todayIso);
@@ -2212,6 +2213,17 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                   <FileSpreadsheet className="w-3.5 h-3.5" />
                   <span>Daily Wages Bill of Factory</span>
                 </button>
+                <button
+                  onClick={() => setAttSubView('wages_vs_overtime')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    attSubView === 'wages_vs_overtime'
+                      ? 'bg-white dark:bg-slate-900 text-blue-600 shadow-2xs'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900'
+                  }`}
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Wages vs Overtime</span>
+                </button>
               </div>
 
               <button
@@ -2223,7 +2235,7 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
                 <span>QR Code Scanner</span>
               </button>
 
-              {canExportPayroll && attSubView !== 'daily_wages_bill' && (
+              {canExportPayroll && attSubView !== 'daily_wages_bill' && attSubView !== 'wages_vs_overtime' && (
                 <button
                   onClick={handleExportAttendanceExcel}
                   className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-2xs"
@@ -3114,6 +3126,19 @@ export const PayrollModule: React.FC<PayrollModuleProps> = ({
           {/* SUB-VIEW 3: DAILY WAGES BILL OF FACTORY REPORT */}
           {attSubView === 'daily_wages_bill' && (
             <DailyWagesBillFactory
+              searchQuery={attSearchQuery}
+              departmentFilter={attDeptFilter}
+              onDepartmentFilterChange={setAttDeptFilter}
+              actionTypeFilter={attActionTypeFilter}
+              officeFilter={attOfficeFilter}
+              activeMonthHint={(attDateFrom || selectedMonthYear).slice(0, 7)}
+              canExport={canExportPayroll}
+            />
+          )}
+
+          {/* SUB-VIEW 4: WAGES VS OVERTIME REPORT */}
+          {attSubView === 'wages_vs_overtime' && (
+            <WagesVsOvertimeReport
               searchQuery={attSearchQuery}
               departmentFilter={attDeptFilter}
               onDepartmentFilterChange={setAttDeptFilter}
