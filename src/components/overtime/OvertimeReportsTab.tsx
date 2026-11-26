@@ -170,6 +170,9 @@ export const OvertimeReportsTab: React.FC = () => {
   const {
     overtimeRequests,
     overtimeAttendances,
+    overtimeRequisitions,
+    grantedOvertimeRequisitions,
+    refreshOvertimeRequisitions,
     fieldForceReps,
     departments,
     salaryStructures,
@@ -204,6 +207,10 @@ export const OvertimeReportsTab: React.FC = () => {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const reportSheetRef = useRef<HTMLDivElement>(null);
   const hasUserChangedMonthRef = useRef(false);
+
+  useEffect(() => {
+    void refreshOvertimeRequisitions?.();
+  }, []);
 
   useEffect(() => {
     if (!isEmpTypeDropdownOpen) return;
@@ -812,9 +819,46 @@ export const OvertimeReportsTab: React.FC = () => {
       grandTotalAmount += row.totalAmount;
     });
 
+    const dailyApprovedReqTotals = new Array(daysInActiveMonth).fill(0);
+    const mergedRequisitions = new Map<
+      string,
+      { overtimeDate?: string; status?: string; requiredWorkers?: number; requestedHours?: number }
+    >();
+    (overtimeRequisitions || []).forEach((rq) => {
+      if (rq?.id) mergedRequisitions.set(rq.id, rq);
+    });
+    (grantedOvertimeRequisitions || []).forEach((rq) => {
+      if (rq?.id) mergedRequisitions.set(rq.id, rq);
+    });
+
+    mergedRequisitions.forEach((rq) => {
+      if (normStr(rq.status) !== 'approved') return;
+      const parsed = extractYMD(rq.overtimeDate);
+      if (!parsed) return;
+      if (monthFilter && parsed.ym !== monthFilter) return;
+      if (!monthFilter && parsed.ym !== activeYearMonth) return;
+      if (parsed.day < 1 || parsed.day > daysInActiveMonth) return;
+
+      const workers = Number(rq.requiredWorkers || 0);
+      const perWorkerHours = Number(rq.requestedHours || 0);
+      const reqTotalHours =
+        workers > 0
+          ? Math.round(workers * perWorkerHours * 100) / 100
+          : Math.round(perWorkerHours * 100) / 100;
+      if (reqTotalHours > 0) {
+        dailyApprovedReqTotals[parsed.day - 1] =
+          Math.round((dailyApprovedReqTotals[parsed.day - 1] + reqTotalHours) * 100) / 100;
+      }
+    });
+
+    const grandApprovedReqHours =
+      Math.round(dailyApprovedReqTotals.reduce((sum, h) => sum + h, 0) * 100) / 100;
+
     return {
       rows,
       dailyTotals,
+      dailyApprovedReqTotals,
+      grandApprovedReqHours,
       grandTotalHours,
       grandTotalAmount: Math.round(grandTotalAmount),
       amountInWords: numberToWordsSimple(grandTotalAmount),
@@ -822,6 +866,8 @@ export const OvertimeReportsTab: React.FC = () => {
   }, [
     overtimeRequests,
     overtimeAttendances,
+    overtimeRequisitions,
+    grantedOvertimeRequisitions,
     fieldForceReps,
     departments,
     salaryStructures,
@@ -906,6 +952,22 @@ export const OvertimeReportsTab: React.FC = () => {
         '',
         '',
       ]);
+      sheetRows.push([
+        'Approved Requisition OT',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        ...deptOvertimeSheet.dailyApprovedReqTotals.map((t) => Number(t.toFixed(2))),
+        Number(deptOvertimeSheet.grandApprovedReqHours.toFixed(2)),
+        '',
+        '',
+        '',
+      ]);
       sheetRows.push([]);
       sheetRows.push([
         '',
@@ -923,6 +985,7 @@ export const OvertimeReportsTab: React.FC = () => {
         { s: { r: 1, c: 0 }, e: { r: 1, c: totalTableCols - 1 } },
         { s: { r: 2, c: 0 }, e: { r: 2, c: totalTableCols - 1 } },
         { s: { r: 5 + deptOvertimeSheet.rows.length, c: 0 }, e: { r: 5 + deptOvertimeSheet.rows.length, c: 2 } },
+        { s: { r: 6 + deptOvertimeSheet.rows.length, c: 0 }, e: { r: 6 + deptOvertimeSheet.rows.length, c: 2 } },
       ];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Daily Overtime Bill');
@@ -1592,6 +1655,33 @@ export const OvertimeReportsTab: React.FC = () => {
                   <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
                     {canViewCost ? deptOvertimeSheet.grandTotalAmount : 'Restricted'}
                   </td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1"></td>
+                </tr>
+
+                {/* Approved Overtime Requisition Day-Wise Total Row */}
+                <tr className="font-bold bg-white">
+                  <td colSpan={3} className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1 text-center text-[10px]">
+                    Approved Requisition OT
+                  </td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1 py-1"></td>
+                  {deptOvertimeSheet.dailyApprovedReqTotals.map((reqSum, idx) => (
+                    <td
+                      key={`req-tot-day-${idx}`}
+                      className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-0.5 py-1 text-center font-sans"
+                    >
+                      {formatHoursValue(reqSum)}
+                    </td>
+                  ))}
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1 text-center font-sans">
+                    {formatHoursValue(deptOvertimeSheet.grandApprovedReqHours)}
+                  </td>
+                  <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1"></td>
                   <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-2 py-1"></td>
                   <td className="border-r-[0.75px] border-b-[0.75px] border-[#1a1a1a] px-1.5 py-1"></td>
                 </tr>
